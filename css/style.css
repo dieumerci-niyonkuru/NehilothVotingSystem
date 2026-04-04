@@ -1,0 +1,28 @@
+
+/* Additional styles for better UI */
+.card {
+    border-radius: 20px;
+    overflow: hidden;
+}
+.btn {
+    border-radius: 30px;
+    padding: 8px 20px;
+    font-weight: 500;
+    transition: all 0.3s;
+}
+.btn:hover {
+    transform: scale(1.02);
+}
+.table th {
+    background-color: #f8f9fa;
+}
+.navbar-brand i {
+    margin-right: 8px;
+}
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+.card {
+    animation: fadeIn 0.5s ease-out;
+}

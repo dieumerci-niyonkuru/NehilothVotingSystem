@@ -1,0 +1,10 @@
+<?php require_once "../config/functions.php";
+if (!isAdminLoggedIn()) redirect("login.php");
+$positions = $pdo->query("SELECT * FROM positions")->fetchAll();
+?>
+<!DOCTYPE html>
+<html><head><title>Results</title><link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet"><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css"><style>.progress{height:30px;}</style></head>
+<body><nav class="navbar navbar-dark bg-dark"><div class="container"><a class="navbar-brand" href="dashboard.php">Results</a><a href="dashboard.php" class="btn btn-light">Back</a></div></nav>
+<div class="container mt-3"><h2 class="text-center">Election Results</h2><?php foreach($positions as $pos): $cands = $pdo->prepare("SELECT * FROM candidates WHERE position_id=?"); $cands->execute([$pos["id"]]); $cands = $cands->fetchAll(); $winner = getWinner($pos["id"]); $total = array_sum(array_map(function($c){return getVoteCount($c["id"]);},$cands));?>
+<div class="card mb-4"><div class="card-header bg-primary text-white"><h4><?php echo htmlspecialchars($pos["title"]);?></h4></div><div class="card-body"><?php if($winner):?><div class="alert alert-success"><i class="fas fa-trophy"></i> Winner: <?php echo htmlspecialchars($winner["name"]);?> (<?php echo $winner["votes"];?> votes)</div><?php endif;?>
+<table class="table"><thead><tr><th>Candidate</th><th>Votes</th><th>%</th></tr></thead><tbody><?php foreach($cands as $c): $v=getVoteCount($c["id"]); $pct=$total>0?round(100*$v/$total,1):0;?><tr><td><?php echo htmlspecialchars($c["name"]);?></td><td><?php echo $v;?></td><td><div class="progress"><div class="progress-bar bg-success" style="width:<?php echo $pct;?>%"><?php echo $pct;?>%</div></div></td></tr><?php endforeach;?></tbody></table></div></div><?php endforeach;?></div></body></html>
