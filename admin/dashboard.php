@@ -1,19 +1,227 @@
-<?php require_once "../config/functions.php";
+<?php
+require_once "../config/functions.php";
 if (!isAdminLoggedIn()) redirect("login.php");
-$totalMembers = $pdo->query("SELECT COUNT(*) FROM members WHERE status='approved'")->fetchColumn();
-$pending = $pdo->query("SELECT COUNT(*) FROM members WHERE status='pending'")->fetchColumn();
-$positions = $pdo->query("SELECT COUNT(*) FROM positions")->fetchColumn();
-$candidates = $pdo->query("SELECT COUNT(*) FROM candidates")->fetchColumn();
-$votes = $pdo->query("SELECT COUNT(*) FROM votes")->fetchColumn();
-$active = isElectionActive();
-$recentVotes = $pdo->query("SELECT v.created_at, m.name as member_name, c.name as candidate_name, p.title as position FROM votes v JOIN members m ON v.member_id=m.id JOIN candidates c ON v.candidate_id=c.id JOIN positions p ON v.position_id=p.id ORDER BY v.created_at DESC LIMIT 10")->fetchAll();
+
+$stats = getDashboardStats();
+
+$recentVotes = $pdo->query("SELECT v.created_at, m.name as member_name, c.name as candidate_name, p.title as position FROM votes v JOIN members m ON v.member_id=m.id JOIN candidates c ON v.candidate_id=c.id JOIN positions p ON v.position_id=p.id ORDER BY v.created_at DESC LIMIT 5")->fetchAll();
+$recentSongs = getSongRequests('pending', null, 5);
+$recentApplications = getWorshipApplications('pending');
+
 $notifications = getUnreadNotifications();
 if (!empty($notifications)) markNotificationsRead();
 ?>
 <!DOCTYPE html>
-<html><head><title>Admin Dashboard</title><link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet"><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css"><style>body{background:#f0f2f5;}.card-hover{transition:0.3s;}.card-hover:hover{transform:translateY(-5px);}</style></head>
-<body><nav class="navbar navbar-dark bg-dark"><div class="container"><a class="navbar-brand" href="dashboard.php"><i class="fas fa-church"></i> Nehiloth Admin</a><div class="ms-auto"><span class="text-white me-3">Admin</span><a href="logout.php" class="btn btn-danger btn-sm">Logout</a></div></div></nav>
-<div class="container-fluid"><div class="row"><div class="col-md-3 mt-3"><div class="list-group"><a href="dashboard.php" class="list-group-item active">Dashboard</a><a href="manage_positions.php" class="list-group-item">Positions</a><a href="manage_candidates.php" class="list-group-item">Candidates</a><a href="manage_members.php" class="list-group-item bg-warning text-dark"><i class="fas fa-user-cog"></i> Members (Full Control)</a><a href="election_control.php" class="list-group-item">Election Control</a><a href="results.php" class="list-group-item">Results</a><a href="reports.php" class="list-group-item bg-info text-white"><i class="fas fa-file-alt"></i> Reports & Export</a></div></div>
-<div class="col-md-9 mt-3"><div class="row"><div class="col-md-3 mb-3"><div class="card text-white bg-primary card-hover"><div class="card-body"><h5><?php echo $totalMembers; ?></h5><p>Approved Members</p></div></div></div><div class="col-md-3 mb-3"><div class="card text-white bg-warning card-hover"><div class="card-body"><h5><?php echo $pending; ?></h5><p>Pending</p></div></div></div><div class="col-md-3 mb-3"><div class="card text-white bg-success card-hover"><div class="card-body"><h5><?php echo $positions; ?></h5><p>Positions</p></div></div></div><div class="col-md-3 mb-3"><div class="card text-white bg-info card-hover"><div class="card-body"><h5><?php echo $candidates; ?></h5><p>Candidates</p></div></div></div></div>
-<div class="row"><div class="col-md-6"><div class="card"><div class="card-header bg-primary text-white"><i class="fas fa-chart-line"></i> Votes Cast</div><div class="card-body"><h2><?php echo $votes; ?></h2></div></div></div><div class="col-md-6"><div class="card"><div class="card-header bg-dark text-white"><i class="fas fa-play-circle"></i> Election Status</div><div class="card-body"><h2 class="<?php echo $active?'text-success':'text-danger';?>"><?php echo $active?'ACTIVE':'INACTIVE';?></h2><a href="election_control.php" class="btn btn-primary">Control</a></div></div></div></div>
-<div class="row mt-3"><div class="col-md-12"><div class="card"><div class="card-header bg-secondary text-white"><i class="fas fa-bell"></i> Recent Activity & Notifications</div><div class="card-body"><h6>Latest Votes (10 most recent)</h6><div class="table-responsive"><table class="table table-sm"><thead><tr><th>Time</th><th>Member</th><th>Position</th><th>Candidate</th></tr></thead><tbody><?php foreach($recentVotes as $v):?><tr><td><?php echo date("H:i:s", strtotime($v["created_at"]));?></td><td><?php echo htmlspecialchars($v["member_name"]);?></td><td><?php echo htmlspecialchars($v["position"]);?></td><td><?php echo htmlspecialchars($v["candidate_name"]);?></td></tr><?php endforeach; if(empty($recentVotes)) echo "<tr><td colspan='4'>No votes yet</td></tr>";?></tbody></table></div><hr><a href="reports.php" class="btn btn-success"><i class="fas fa-download"></i> Download Full Report (CSV)</a></div></div></div></div></div></div></div></body></html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard - Nehiloth Worship System</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        body { background: #f4f6f9; min-height: 100vh; }
+        .stat-card { border-radius: 15px; border: none; transition: transform 0.2s; }
+        .stat-card:hover { transform: translateY(-4px); }
+    </style>
+</head>
+<body>
+<?php include "../navbar.php"; ?>
+
+<div class="container-fluid py-4 px-md-5">
+    <!-- Header -->
+    <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 bg-white p-3 p-md-4 rounded-4 shadow-sm">
+        <div>
+            <h2 class="fw-bold text-dark mb-0"><i class="fas fa-user-shield text-warning me-2"></i>Nehiloth Admin Control Panel</h2>
+            <p class="text-muted small mb-0">Overview of members, worship team applications, song requests, and elections</p>
+        </div>
+        <div class="d-flex gap-2 mt-2 mt-md-0">
+            <a href="reports.php" class="btn btn-success rounded-pill px-3"><i class="fas fa-file-download me-1"></i> Export Reports</a>
+            <a href="logout.php" class="btn btn-danger rounded-pill px-3"><i class="fas fa-sign-out-alt me-1"></i> Logout</a>
+        </div>
+    </div>
+
+    <!-- Quick Stats Metric Cards Grid -->
+    <div class="row g-3 mb-4">
+        <div class="col-6 col-md-4 col-xl-2">
+            <a href="manage_members.php" class="card stat-card bg-primary text-white p-3 text-decoration-none shadow-sm">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h3 class="fw-bold mb-0"><?php echo $stats['approved_members']; ?></h3>
+                        <small class="text-white-50">Members</small>
+                    </div>
+                    <i class="fas fa-users fa-2x opacity-75"></i>
+                </div>
+            </a>
+        </div>
+        <div class="col-6 col-md-4 col-xl-2">
+            <a href="manage_members.php?status=pending" class="card stat-card bg-warning text-dark p-3 text-decoration-none shadow-sm">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h3 class="fw-bold mb-0"><?php echo $stats['pending_members']; ?></h3>
+                        <small class="text-dark">Pending Members</small>
+                    </div>
+                    <i class="fas fa-user-clock fa-2x opacity-75"></i>
+                </div>
+            </a>
+        </div>
+        <div class="col-6 col-md-4 col-xl-2">
+            <a href="manage_songs.php" class="card stat-card bg-info text-dark p-3 text-decoration-none shadow-sm">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h3 class="fw-bold mb-0"><?php echo $stats['pending_songs']; ?></h3>
+                        <small class="text-dark">Pending Songs</small>
+                    </div>
+                    <i class="fas fa-music fa-2x opacity-75"></i>
+                </div>
+            </a>
+        </div>
+        <div class="col-6 col-md-4 col-xl-2">
+            <a href="manage_applications.php" class="card stat-card bg-success text-white p-3 text-decoration-none shadow-sm">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h3 class="fw-bold mb-0"><?php echo $stats['pending_applications']; ?></h3>
+                        <small class="text-white-50">Team Applicants</small>
+                    </div>
+                    <i class="fas fa-hands-helping fa-2x opacity-75"></i>
+                </div>
+            </a>
+        </div>
+        <div class="col-6 col-md-4 col-xl-2">
+            <a href="election_control.php" class="card stat-card <?php echo $stats['election_active'] ? 'bg-danger text-white' : 'bg-secondary text-white'; ?> p-3 text-decoration-none shadow-sm">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h5 class="fw-bold mb-0"><?php echo $stats['election_active'] ? 'ACTIVE' : 'INACTIVE'; ?></h5>
+                        <small class="text-white-50">Election</small>
+                    </div>
+                    <i class="fas fa-vote-yea fa-2x opacity-75"></i>
+                </div>
+            </a>
+        </div>
+        <div class="col-6 col-md-4 col-xl-2">
+            <a href="manage_leadership.php" class="card stat-card bg-dark text-white p-3 text-decoration-none shadow-sm">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h3 class="fw-bold mb-0"><?php echo $stats['leadership_count']; ?></h3>
+                        <small class="text-white-50">Leadership</small>
+                    </div>
+                    <i class="fas fa-users-cog fa-2x opacity-75"></i>
+                </div>
+            </a>
+        </div>
+    </div>
+
+    <!-- Main Admin Controls Grid -->
+    <div class="row g-4">
+        <!-- Sidebar Navigation Buttons -->
+        <div class="col-lg-3">
+            <div class="card border-0 shadow-sm rounded-4 p-3 bg-white mb-4">
+                <h6 class="fw-bold text-muted mb-3"><i class="fas fa-cogs me-2"></i>Admin Shortcuts</h6>
+                <div class="d-grid gap-2">
+                    <a href="manage_members.php" class="btn btn-outline-primary text-start fw-bold"><i class="fas fa-users me-2"></i> Manage Members</a>
+                    <a href="manage_songs.php" class="btn btn-outline-warning text-dark text-start fw-bold"><i class="fas fa-music me-2"></i> Manage Song Requests</a>
+                    <a href="manage_applications.php" class="btn btn-outline-success text-start fw-bold"><i class="fas fa-hands-helping me-2"></i> Worship Team Applications</a>
+                    <a href="manage_leadership.php" class="btn btn-outline-danger text-start fw-bold"><i class="fas fa-users-cog me-2"></i> Manage Leadership</a>
+                    <a href="manage_positions.php" class="btn btn-outline-secondary text-start"><i class="fas fa-briefcase me-2"></i> Election Positions</a>
+                    <a href="manage_candidates.php" class="btn btn-outline-info text-start"><i class="fas fa-user-tie me-2"></i> Election Candidates</a>
+                    <a href="election_control.php" class="btn btn-outline-dark text-start"><i class="fas fa-toggle-on me-2"></i> Election Control Toggle</a>
+                    <a href="results.php" class="btn btn-outline-success text-start"><i class="fas fa-chart-bar me-2"></i> Election Live Results</a>
+                    <a href="reports.php" class="btn btn-success text-start"><i class="fas fa-file-export me-2"></i> Export CSV Reports</a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Pending Items & Activity Tables -->
+        <div class="col-lg-9">
+            <div class="row g-4">
+                <!-- Pending Worship Applications Queue -->
+                <div class="col-md-6">
+                    <div class="card border-0 shadow-sm rounded-4 p-3 bg-white h-100">
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <h6 class="fw-bold text-dark mb-0"><i class="fas fa-user-plus text-success me-2"></i>Pending Worship Team Applications</h6>
+                            <a href="manage_applications.php" class="btn btn-sm btn-outline-success rounded-pill">View All</a>
+                        </div>
+                        <?php if (empty($recentApplications)): ?>
+                            <p class="text-muted small py-3 text-center mb-0">No pending team applications.</p>
+                        <?php else: ?>
+                            <div class="list-group list-group-flush">
+                                <?php foreach (array_slice($recentApplications, 0, 4) as $app): ?>
+                                    <div class="list-group-item px-0 py-2">
+                                        <div class="d-flex justify-content-between align-items-center">
+                                            <strong class="text-dark small"><?php echo htmlspecialchars($app['applicant_name']); ?></strong>
+                                            <span class="badge bg-primary rounded-pill"><?php echo htmlspecialchars($app['role_applied']); ?></span>
+                                        </div>
+                                        <small class="text-muted"><?php echo htmlspecialchars($app['phone']); ?></small>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
+                        <?php endif; ?>
+                    </div>
+                </div>
+
+                <!-- Pending Song Requests Queue -->
+                <div class="col-md-6">
+                    <div class="card border-0 shadow-sm rounded-4 p-3 bg-white h-100">
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <h6 class="fw-bold text-dark mb-0"><i class="fas fa-music text-warning me-2"></i>Pending Song Requests</h6>
+                            <a href="manage_songs.php" class="btn btn-sm btn-outline-warning text-dark rounded-pill">View All</a>
+                        </div>
+                        <?php if (empty($recentSongs)): ?>
+                            <p class="text-muted small py-3 text-center mb-0">No pending song requests.</p>
+                        <?php else: ?>
+                            <div class="list-group list-group-flush">
+                                <?php foreach ($recentSongs as $s): ?>
+                                    <div class="list-group-item px-0 py-2">
+                                        <div class="d-flex justify-content-between align-items-center">
+                                            <strong class="text-dark small"><?php echo htmlspecialchars($s['song_title']); ?></strong>
+                                            <span class="badge bg-secondary"><?php echo htmlspecialchars($s['genre_category']); ?></span>
+                                        </div>
+                                        <small class="text-muted">By <?php echo htmlspecialchars($s['artist']); ?> &bull; Requested by <?php echo htmlspecialchars($s['requester_name']); ?></small>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
+                        <?php endif; ?>
+                    </div>
+                </div>
+
+                <!-- Recent Voting Activity -->
+                <div class="col-12">
+                    <div class="card border-0 shadow-sm rounded-4 p-3 bg-white">
+                        <h6 class="fw-bold text-dark mb-3"><i class="fas fa-history text-primary me-2"></i>Recent Voting Activity</h6>
+                        <div class="table-responsive">
+                            <table class="table table-hover table-sm align-middle mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Time</th>
+                                        <th>Voter Member</th>
+                                        <th>Position</th>
+                                        <th>Candidate Voted</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php if (empty($recentVotes)): ?>
+                                        <tr><td colspan="4" class="text-center py-3 text-muted">No votes cast yet.</td></tr>
+                                    <?php else: ?>
+                                        <?php foreach ($recentVotes as $rv): ?>
+                                            <tr>
+                                                <td><small class="text-muted"><?php echo date("H:i:s", strtotime($rv["created_at"])); ?></small></td>
+                                                <td><strong class="text-dark"><?php echo htmlspecialchars($rv["member_name"]); ?></strong></td>
+                                                <td><span class="badge bg-light text-dark"><?php echo htmlspecialchars($rv["position"]); ?></span></td>
+                                                <td><span class="fw-bold text-primary"><?php echo htmlspecialchars($rv["candidate_name"]); ?></span></td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                    <?php endif; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+<?php include "../footer.php"; ?>
+</body>
+</html>
