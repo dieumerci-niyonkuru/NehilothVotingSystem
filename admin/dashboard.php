@@ -4,23 +4,20 @@ if (!isAdminLoggedIn()) redirect("login.php");
 
 $stats = getDashboardStats();
 
-$recentVotes = $pdo->query("SELECT v.created_at, m.name as member_name, c.name as candidate_name, p.title as position FROM votes v JOIN members m ON v.member_id=m.id JOIN candidates c ON v.candidate_id=c.id JOIN positions p ON v.position_id=p.id ORDER BY v.created_at DESC LIMIT 5")->fetchAll();
+$recentVotes = $pdo->query("SELECT b.voted_at as created_at, p.title as position, c.name as candidate_name FROM ballots b JOIN positions p ON b.position_id=p.id JOIN candidates c ON b.candidate_id=c.id ORDER BY b.voted_at DESC LIMIT 5")->fetchAll();
 $recentSongs = getSongRequests('pending', null, 5);
 $recentApplications = getWorshipApplications('pending');
-
-$notifications = getUnreadNotifications();
-if (!empty($notifications)) markNotificationsRead();
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin Dashboard - Nehiloth Worship System</title>
+    <title>Admin Dashboard - NELILOTH WORSHIP</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
-        body { background: #f4f6f9; min-height: 100vh; }
+        body { background: #f4f6f9; min-height: 100vh; padding-bottom: 70px; }
         .stat-card { border-radius: 15px; border: none; transition: transform 0.2s; }
         .stat-card:hover { transform: translateY(-4px); }
     </style>
@@ -32,8 +29,8 @@ if (!empty($notifications)) markNotificationsRead();
     <!-- Header -->
     <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 bg-white p-3 p-md-4 rounded-4 shadow-sm">
         <div>
-            <h2 class="fw-bold text-dark mb-0"><i class="fas fa-user-shield text-warning me-2"></i>Nehiloth Admin Control Panel</h2>
-            <p class="text-muted small mb-0">Overview of members, worship team applications, song requests, and elections</p>
+            <h2 class="fw-bold text-dark mb-0"><i class="fas fa-user-shield text-warning me-2"></i>NELILOTH Administrator Control Panel</h2>
+            <p class="text-muted small mb-0">CEP Family - Rwanda Polytechnic, Tumba College Digital Platform Administration</p>
         </div>
         <div class="d-flex gap-2 mt-2 mt-md-0">
             <a href="reports.php" class="btn btn-success rounded-pill px-3"><i class="fas fa-file-download me-1"></i> Export Reports</a>
@@ -55,57 +52,57 @@ if (!empty($notifications)) markNotificationsRead();
             </a>
         </div>
         <div class="col-6 col-md-4 col-xl-2">
-            <a href="manage_members.php?status=pending" class="card stat-card bg-warning text-dark p-3 text-decoration-none shadow-sm">
+            <a href="manage_elections.php" class="card stat-card <?php echo $stats['election_active'] ? 'bg-danger text-white' : 'bg-secondary text-white'; ?> p-3 text-decoration-none shadow-sm">
                 <div class="d-flex justify-content-between align-items-center">
                     <div>
-                        <h3 class="fw-bold mb-0"><?php echo $stats['pending_members']; ?></h3>
-                        <small class="text-dark">Pending Members</small>
-                    </div>
-                    <i class="fas fa-user-clock fa-2x opacity-75"></i>
-                </div>
-            </a>
-        </div>
-        <div class="col-6 col-md-4 col-xl-2">
-            <a href="manage_songs.php" class="card stat-card bg-info text-dark p-3 text-decoration-none shadow-sm">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                        <h3 class="fw-bold mb-0"><?php echo $stats['pending_songs']; ?></h3>
-                        <small class="text-dark">Pending Songs</small>
-                    </div>
-                    <i class="fas fa-music fa-2x opacity-75"></i>
-                </div>
-            </a>
-        </div>
-        <div class="col-6 col-md-4 col-xl-2">
-            <a href="manage_applications.php" class="card stat-card bg-success text-white p-3 text-decoration-none shadow-sm">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                        <h3 class="fw-bold mb-0"><?php echo $stats['pending_applications']; ?></h3>
-                        <small class="text-white-50">Team Applicants</small>
-                    </div>
-                    <i class="fas fa-hands-helping fa-2x opacity-75"></i>
-                </div>
-            </a>
-        </div>
-        <div class="col-6 col-md-4 col-xl-2">
-            <a href="election_control.php" class="card stat-card <?php echo $stats['election_active'] ? 'bg-danger text-white' : 'bg-secondary text-white'; ?> p-3 text-decoration-none shadow-sm">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                        <h5 class="fw-bold mb-0"><?php echo $stats['election_active'] ? 'ACTIVE' : 'INACTIVE'; ?></h5>
-                        <small class="text-white-50">Election</small>
+                        <h5 class="fw-bold mb-0"><?php echo $stats['election_active'] ? 'ACTIVE' : 'OFFLINE'; ?></h5>
+                        <small class="text-white-50">Elections</small>
                     </div>
                     <i class="fas fa-vote-yea fa-2x opacity-75"></i>
                 </div>
             </a>
         </div>
         <div class="col-6 col-md-4 col-xl-2">
-            <a href="manage_leadership.php" class="card stat-card bg-dark text-white p-3 text-decoration-none shadow-sm">
+            <a href="manage_schedule.php" class="card stat-card bg-success text-white p-3 text-decoration-none shadow-sm">
                 <div class="d-flex justify-content-between align-items-center">
                     <div>
-                        <h3 class="fw-bold mb-0"><?php echo $stats['leadership_count']; ?></h3>
-                        <small class="text-white-50">Leadership</small>
+                        <h5 class="fw-bold mb-0">Schedule</h5>
+                        <small class="text-white-50">Weekly Worship</small>
                     </div>
-                    <i class="fas fa-users-cog fa-2x opacity-75"></i>
+                    <i class="fas fa-calendar-alt fa-2x opacity-75"></i>
+                </div>
+            </a>
+        </div>
+        <div class="col-6 col-md-4 col-xl-2">
+            <a href="manage_announcements.php" class="card stat-card bg-warning text-dark p-3 text-decoration-none shadow-sm">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h5 class="fw-bold mb-0">News</h5>
+                        <small class="text-dark">Announcements</small>
+                    </div>
+                    <i class="fas fa-bullhorn fa-2x opacity-75"></i>
+                </div>
+            </a>
+        </div>
+        <div class="col-6 col-md-4 col-xl-2">
+            <a href="manage_applications.php" class="card stat-card bg-info text-dark p-3 text-decoration-none shadow-sm">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h3 class="fw-bold mb-0"><?php echo $stats['pending_applications']; ?></h3>
+                        <small class="text-dark">Team Applicants</small>
+                    </div>
+                    <i class="fas fa-hands-helping fa-2x opacity-75"></i>
+                </div>
+            </a>
+        </div>
+        <div class="col-6 col-md-4 col-xl-2">
+            <a href="manage_gallery.php" class="card stat-card bg-dark text-white p-3 text-decoration-none shadow-sm">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h5 class="fw-bold mb-0">Gallery</h5>
+                        <small class="text-white-50">Photos & Videos</small>
+                    </div>
+                    <i class="fas fa-images fa-2x opacity-75"></i>
                 </div>
             </a>
         </div>
@@ -116,17 +113,17 @@ if (!empty($notifications)) markNotificationsRead();
         <!-- Sidebar Navigation Buttons -->
         <div class="col-lg-3">
             <div class="card border-0 shadow-sm rounded-4 p-3 bg-white mb-4">
-                <h6 class="fw-bold text-muted mb-3"><i class="fas fa-cogs me-2"></i>Admin Shortcuts</h6>
+                <h6 class="fw-bold text-muted mb-3"><i class="fas fa-cogs me-2"></i>Administration Modules</h6>
                 <div class="d-grid gap-2">
-                    <a href="manage_members.php" class="btn btn-outline-primary text-start fw-bold"><i class="fas fa-users me-2"></i> Manage Members</a>
-                    <a href="manage_songs.php" class="btn btn-outline-warning text-dark text-start fw-bold"><i class="fas fa-music me-2"></i> Manage Song Requests</a>
-                    <a href="manage_applications.php" class="btn btn-outline-success text-start fw-bold"><i class="fas fa-hands-helping me-2"></i> Worship Team Applications</a>
-                    <a href="manage_leadership.php" class="btn btn-outline-danger text-start fw-bold"><i class="fas fa-users-cog me-2"></i> Manage Leadership</a>
-                    <a href="manage_positions.php" class="btn btn-outline-secondary text-start"><i class="fas fa-briefcase me-2"></i> Election Positions</a>
-                    <a href="manage_candidates.php" class="btn btn-outline-info text-start"><i class="fas fa-user-tie me-2"></i> Election Candidates</a>
-                    <a href="election_control.php" class="btn btn-outline-dark text-start"><i class="fas fa-toggle-on me-2"></i> Election Control Toggle</a>
-                    <a href="results.php" class="btn btn-outline-success text-start"><i class="fas fa-chart-bar me-2"></i> Election Live Results</a>
-                    <a href="reports.php" class="btn btn-success text-start"><i class="fas fa-file-export me-2"></i> Export CSV Reports</a>
+                    <a href="manage_members.php" class="btn btn-outline-primary text-start fw-bold"><i class="fas fa-users me-2"></i> Member Management</a>
+                    <a href="manage_elections.php" class="btn btn-outline-danger text-start fw-bold"><i class="fas fa-vote-yea me-2"></i> Committee Elections</a>
+                    <a href="manage_schedule.php" class="btn btn-outline-success text-start fw-bold"><i class="fas fa-calendar-alt me-2"></i> Weekly Worship Schedule</a>
+                    <a href="manage_announcements.php" class="btn btn-outline-warning text-dark text-start fw-bold"><i class="fas fa-bullhorn me-2"></i> News & Announcements</a>
+                    <a href="manage_applications.php" class="btn btn-outline-info text-start fw-bold"><i class="fas fa-hands-helping me-2"></i> Worship Team Applications</a>
+                    <a href="manage_songs.php" class="btn btn-outline-secondary text-start fw-bold"><i class="fas fa-music me-2"></i> Song Requests Manager</a>
+                    <a href="manage_leadership.php" class="btn btn-outline-dark text-start fw-bold"><i class="fas fa-users-cog me-2"></i> Leadership Directory</a>
+                    <a href="manage_gallery.php" class="btn btn-outline-danger text-start fw-bold"><i class="fas fa-images me-2"></i> Worship Gallery</a>
+                    <a href="reports.php" class="btn btn-success text-start fw-bold"><i class="fas fa-file-export me-2"></i> Export CSV Reports</a>
                 </div>
             </div>
         </div>
@@ -138,7 +135,7 @@ if (!empty($notifications)) markNotificationsRead();
                 <div class="col-md-6">
                     <div class="card border-0 shadow-sm rounded-4 p-3 bg-white h-100">
                         <div class="d-flex justify-content-between align-items-center mb-3">
-                            <h6 class="fw-bold text-dark mb-0"><i class="fas fa-user-plus text-success me-2"></i>Pending Worship Team Applications</h6>
+                            <h6 class="fw-bold text-dark mb-0"><i class="fas fa-user-plus text-success me-2"></i>Pending Worship Applications</h6>
                             <a href="manage_applications.php" class="btn btn-sm btn-outline-success rounded-pill">View All</a>
                         </div>
                         <?php if (empty($recentApplications)): ?>
@@ -184,30 +181,30 @@ if (!empty($notifications)) markNotificationsRead();
                     </div>
                 </div>
 
-                <!-- Recent Voting Activity -->
+                <!-- Secret Ballot Voting Activity Log -->
                 <div class="col-12">
                     <div class="card border-0 shadow-sm rounded-4 p-3 bg-white">
-                        <h6 class="fw-bold text-dark mb-3"><i class="fas fa-history text-primary me-2"></i>Recent Voting Activity</h6>
+                        <h6 class="fw-bold text-dark mb-3"><i class="fas fa-user-check text-primary me-2"></i>Recent Secret Ballots Cast (Anonymized)</h6>
                         <div class="table-responsive">
                             <table class="table table-hover table-sm align-middle mb-0">
                                 <thead class="table-light">
                                     <tr>
-                                        <th>Time</th>
-                                        <th>Voter Member</th>
-                                        <th>Position</th>
+                                        <th>Time Cast</th>
+                                        <th>Position Contested</th>
                                         <th>Candidate Voted</th>
+                                        <th>Anonymity Status</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     <?php if (empty($recentVotes)): ?>
-                                        <tr><td colspan="4" class="text-center py-3 text-muted">No votes cast yet.</td></tr>
+                                        <tr><td colspan="4" class="text-center py-3 text-muted">No secret ballots cast yet.</td></tr>
                                     <?php else: ?>
                                         <?php foreach ($recentVotes as $rv): ?>
                                             <tr>
                                                 <td><small class="text-muted"><?php echo date("H:i:s", strtotime($rv["created_at"])); ?></small></td>
-                                                <td><strong class="text-dark"><?php echo htmlspecialchars($rv["member_name"]); ?></strong></td>
-                                                <td><span class="badge bg-light text-dark"><?php echo htmlspecialchars($rv["position"]); ?></span></td>
+                                                <td><span class="badge bg-light text-dark border"><?php echo htmlspecialchars($rv["position"]); ?></span></td>
                                                 <td><span class="fw-bold text-primary"><?php echo htmlspecialchars($rv["candidate_name"]); ?></span></td>
+                                                <td><span class="badge bg-success rounded-pill"><i class="fas fa-lock me-1"></i>Secret Ballot</span></td>
                                             </tr>
                                         <?php endforeach; ?>
                                     <?php endif; ?>
@@ -221,6 +218,7 @@ if (!empty($notifications)) markNotificationsRead();
     </div>
 </div>
 
+<?php include "../mobile_nav.php"; ?>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
 <?php include "../footer.php"; ?>
 </body>
