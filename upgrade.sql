@@ -9,6 +9,17 @@ CREATE TABLE IF NOT EXISTS notifications (
 ALTER TABLE notifications ADD COLUMN IF NOT EXISTS title VARCHAR(255) NULL;
 ALTER TABLE notifications ADD COLUMN IF NOT EXISTS recipient_group VARCHAR(50) DEFAULT 'all';
 
+CREATE TABLE IF NOT EXISTS gallery (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    title VARCHAR(255) NOT NULL,
+    category ENUM('photos','videos') DEFAULT 'photos',
+    media_url VARCHAR(255) NOT NULL,
+    thumbnail_url VARCHAR(255) NULL,
+    description TEXT,
+    uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+ALTER TABLE gallery ADD COLUMN IF NOT EXISTS is_published BOOLEAN NOT NULL DEFAULT TRUE;
+
 CREATE TABLE IF NOT EXISTS elections (
     id INT PRIMARY KEY AUTO_INCREMENT,
     title VARCHAR(255) NOT NULL,

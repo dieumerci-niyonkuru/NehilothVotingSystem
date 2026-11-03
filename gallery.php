@@ -2,7 +2,7 @@
 require_once "config/functions.php";
 
 $category = isset($_GET['category']) ? sanitize($_GET['category']) : null;
-$sql = "SELECT * FROM gallery WHERE 1=1";
+$sql = "SELECT * FROM gallery WHERE is_published = 1";
 $params = [];
 if ($category) {
     $sql .= " AND category = ?";
@@ -50,7 +50,14 @@ $gallery = $stmt->fetchAll();
             <?php foreach ($gallery as $g): ?>
                 <div class="col-md-6 col-lg-4">
                     <div class="card border-0 shadow-sm rounded-4 bg-white h-100 overflow-hidden">
-                        <img src="<?php echo htmlspecialchars($g['media_url']); ?>" class="gal-img" alt="<?php echo htmlspecialchars($g['title']); ?>">
+                        <?php if ($g['category'] === 'videos'): ?>
+                            <video class="gal-img bg-dark" controls preload="metadata" aria-label="<?php echo htmlspecialchars($g['title']); ?>">
+                                <source src="<?php echo htmlspecialchars($g['media_url']); ?>">
+                                Your browser does not support video playback.
+                            </video>
+                        <?php else: ?>
+                            <img src="<?php echo htmlspecialchars($g['media_url']); ?>" class="gal-img" alt="<?php echo htmlspecialchars($g['title']); ?>" loading="lazy">
+                        <?php endif; ?>
                         <div class="card-body p-3">
                             <span class="badge bg-secondary mb-2"><?php echo strtoupper($g['category']); ?></span>
                             <h5 class="fw-bold text-dark mb-1"><?php echo htmlspecialchars($g['title']); ?></h5>

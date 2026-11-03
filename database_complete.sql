@@ -173,6 +173,7 @@ CREATE TABLE IF NOT EXISTS gallery (
     media_url VARCHAR(255) NOT NULL,
     thumbnail_url VARCHAR(255) NULL,
     description TEXT,
+    is_published BOOLEAN NOT NULL DEFAULT TRUE,
     uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

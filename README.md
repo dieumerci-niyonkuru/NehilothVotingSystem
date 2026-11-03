@@ -56,6 +56,12 @@ The standard database setup above applies `upgrade.sql`, which creates or upgrad
 
 **Privacy limitation:** voter eligibility and ballot selections are stored in separate tables, but this application does not implement a reviewed cryptographic unlinkability protocol. Do not describe the current database implementation as cryptographically anonymous or independently verifiable.
 
+## Worship gallery media
+
+Open **Admin → Gallery** to manage public media. When the gallery manager is opened, supported files already in `photo/` and `video/` are added to the gallery automatically. Administrators can upload JPEG, PNG, GIF, WebP, MP4, WebM, and OGV files, edit titles and descriptions, and publish or hide items without deleting the original media file. Existing external HTTP(S) media links can also be added.
+
+The public gallery and gallery API show only published items and render videos with native playback controls. For an existing installation, run `upgrade.sql` to add the gallery visibility field before deploying these changes.
+
 ---
 
 ### 🔑 Default Admin Credentials

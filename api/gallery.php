@@ -6,7 +6,7 @@ header("Access-Control-Allow-Methods: GET, OPTIONS");
 require_once __DIR__ . "/../config/functions.php";
 
 $category = isset($_GET['category']) ? sanitize($_GET['category']) : null;
-$sql = "SELECT * FROM gallery WHERE 1=1";
+$sql = "SELECT * FROM gallery WHERE is_published = 1";
 $params = [];
 
 if ($category) {
