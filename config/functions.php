@@ -20,20 +20,20 @@ function addNotification($message, $type = "info") {
     try {
         $stmt = $pdo->prepare("INSERT INTO notifications (message, type) VALUES (?, ?)");
         $stmt->execute([$message, $type]);
-    } catch (PDOException $e) {}
+    } catch (PDOException $e) {
+        error_log("Unable to create admin notification: " . $e->getMessage());
+    }
 }
 
 function getUnreadNotifications() {
     global $pdo;
-    try {
-        $stmt = $pdo->query("SELECT * FROM notifications WHERE is_read = 0 ORDER BY created_at DESC LIMIT 20");
-        return $stmt->fetchAll();
-    } catch (PDOException $e) { return []; }
+    $stmt = $pdo->query("SELECT * FROM notifications WHERE is_read = 0 ORDER BY created_at DESC LIMIT 20");
+    return $stmt->fetchAll();
 }
 
 function markNotificationsRead() {
     global $pdo;
-    try { $pdo->exec("UPDATE notifications SET is_read = 1"); } catch (PDOException $e) {}
+    $pdo->exec("UPDATE notifications SET is_read = 1 WHERE is_read = 0");
 }
 
 function getVoteDetails($candidate_id) {
@@ -83,42 +83,38 @@ function addMemberNotification($member_id, $message, $type = "info") {
     try {
         $stmt = $pdo->prepare("INSERT INTO member_notifications (member_id, message, type) VALUES (?, ?, ?)");
         $stmt->execute([$member_id, $message, $type]);
-    } catch (PDOException $e) {}
+    } catch (PDOException $e) {
+        error_log("Unable to create member notification: " . $e->getMessage());
+    }
 }
 
 function getMemberNotifications($member_id, $limit = 10) {
     global $pdo;
-    try {
-        $stmt = $pdo->prepare("SELECT * FROM member_notifications WHERE member_id = ? AND is_read = 0 ORDER BY created_at DESC LIMIT ?");
-        $stmt->execute([$member_id, $limit]);
-        return $stmt->fetchAll();
-    } catch (PDOException $e) { return []; }
+    $stmt = $pdo->prepare("SELECT * FROM member_notifications WHERE member_id = ? AND is_read = 0 ORDER BY created_at DESC LIMIT ?");
+    $stmt->bindValue(1, $member_id, PDO::PARAM_INT);
+    $stmt->bindValue(2, max(0, (int)$limit), PDO::PARAM_INT);
+    $stmt->execute();
+    return $stmt->fetchAll();
 }
 
 function markMemberNotificationRead($notification_id, $member_id) {
     global $pdo;
-    try {
-        $stmt = $pdo->prepare("UPDATE member_notifications SET is_read = 1 WHERE id = ? AND member_id = ?");
-        $stmt->execute([$notification_id, $member_id]);
-    } catch (PDOException $e) {}
+    $stmt = $pdo->prepare("UPDATE member_notifications SET is_read = 1 WHERE id = ? AND member_id = ?");
+    $stmt->execute([$notification_id, $member_id]);
 }
 
 function markAllMemberNotificationsRead($member_id) {
     global $pdo;
-    try {
-        $stmt = $pdo->prepare("UPDATE member_notifications SET member_id = ?");
-        $stmt->execute([$member_id]);
-    } catch (PDOException $e) {}
+    $stmt = $pdo->prepare("UPDATE member_notifications SET is_read = 1 WHERE member_id = ? AND is_read = 0");
+    $stmt->execute([$member_id]);
 }
 
 function notifyAllMembers($message, $type = "info") {
     global $pdo;
-    try {
-        $members = $pdo->query("SELECT id FROM members WHERE status = 'approved'")->fetchAll();
-        foreach ($members as $m) {
-            addMemberNotification($m["id"], $message, $type);
-        }
-    } catch (PDOException $e) {}
+    $members = $pdo->query("SELECT id FROM members WHERE status = 'approved'")->fetchAll();
+    foreach ($members as $m) {
+        addMemberNotification($m["id"], $message, $type);
+    }
 }
 
 // ========== SONG REQUESTS FUNCTIONS ==========

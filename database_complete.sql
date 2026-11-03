@@ -42,10 +42,11 @@ CREATE TABLE IF NOT EXISTS announcements (
 -- System Notifications & Member Read Status
 CREATE TABLE IF NOT EXISTS notifications (
     id INT PRIMARY KEY AUTO_INCREMENT,
-    title VARCHAR(255) NOT NULL,
+    title VARCHAR(255) NULL,
     message TEXT NOT NULL,
     type VARCHAR(50) DEFAULT 'info',
     recipient_group VARCHAR(50) DEFAULT 'all',
+    is_read BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
