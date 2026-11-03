@@ -109,7 +109,9 @@ CREATE TABLE IF NOT EXISTS elections (
     description TEXT,
     start_time DATETIME NOT NULL,
     end_time DATETIME NOT NULL,
-    status ENUM('upcoming','open','closed','cancelled') DEFAULT 'upcoming',
+    status ENUM('draft','upcoming','open','paused','closed','cancelled') DEFAULT 'draft',
+    results_published BOOLEAN NOT NULL DEFAULT FALSE,
+    published_at DATETIME NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -120,10 +122,34 @@ CREATE TABLE IF NOT EXISTS ballots (
     position_id INT NOT NULL,
     candidate_id INT NOT NULL,
     anonymous_hash VARCHAR(255) NOT NULL,
+    ballot_group VARCHAR(64) NULL,
     voted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY unique_ballot_position (ballot_group, position_id),
     FOREIGN KEY (election_id) REFERENCES elections(id) ON DELETE CASCADE,
     FOREIGN KEY (position_id) REFERENCES positions(id) ON DELETE CASCADE,
     FOREIGN KEY (candidate_id) REFERENCES candidates(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS election_eligible_voters (
+    election_id INT NOT NULL,
+    member_id INT NOT NULL,
+    eligible_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (election_id, member_id),
+    FOREIGN KEY (election_id) REFERENCES elections(id) ON DELETE CASCADE,
+    FOREIGN KEY (member_id) REFERENCES members(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS election_vote_receipts (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    election_id INT NOT NULL,
+    member_id INT NOT NULL,
+    idempotency_hash CHAR(64) NOT NULL,
+    receipt_code CHAR(32) NOT NULL,
+    receipt_hash CHAR(64) NOT NULL,
+    submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY unique_election_voter (election_id, member_id),
+    FOREIGN KEY (election_id) REFERENCES elections(id) ON DELETE CASCADE,
+    FOREIGN KEY (member_id) REFERENCES members(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS voting_eligibility (
@@ -178,7 +204,7 @@ WHERE NOT EXISTS (SELECT id FROM weekly_schedules WHERE activity_title = 'Midwee
 
 -- Seed Sample Active Election
 INSERT INTO elections (title, description, start_time, end_time, status)
-SELECT * FROM (SELECT 'NELILOTH Leadership Committee Election 2026' AS a, 'Official election for President, Vice President, Secretary, Treasurer, and Worship Leaders.' AS b, '2026-10-20 00:00:00' AS c, '2026-10-28 23:59:59' AS d, 'open' AS e) AS tmp
+SELECT * FROM (SELECT 'NELILOTH Leadership Committee Election 2026' AS a, 'Official election for President, Vice President, Secretary, Treasurer, and Worship Leaders.' AS b, '2026-10-20 00:00:00' AS c, '2026-10-28 23:59:59' AS d, 'draft' AS e) AS tmp
 WHERE NOT EXISTS (SELECT id FROM elections WHERE title LIKE '%Leadership Committee Election%') LIMIT 1;
 
 -- Seed Sample Positions

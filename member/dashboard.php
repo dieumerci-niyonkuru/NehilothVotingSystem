@@ -4,8 +4,17 @@ if (!isMemberLoggedIn()) redirect("../login.php");
 
 $member_id = $_SESSION["member_id"];
 $member_name = $_SESSION["member_name"];
-$positions = $pdo->query("SELECT * FROM positions")->fetchAll();
-$active = isElectionActive();
+$election = $pdo->query("SELECT id, title, status FROM elections WHERE status IN ('upcoming','open','paused') ORDER BY id DESC LIMIT 1")->fetch();
+$election_id = $election ? (int)$election["id"] : 0;
+$election_status = $election_id ? getElectionStatus($election_id) : "closed";
+$active = $election_status === "open";
+$member_has_ballot = $election_id ? hasVotedInElection($member_id, $election_id) : false;
+$positions = [];
+if ($election_id) {
+    $position_stmt = $pdo->prepare("SELECT * FROM positions WHERE election_id = ? ORDER BY id");
+    $position_stmt->execute([$election_id]);
+    $positions = $position_stmt->fetchAll();
+}
 
 // Get unread notifications
 $notifications = getMemberNotifications($member_id, 10);
@@ -108,15 +117,23 @@ $my_applications = $stmt->fetchAll();
             <div class="card dash-card bg-white p-4 h-100">
                 <div class="d-flex justify-content-between align-items-center mb-3">
                     <h5 class="fw-bold text-dark mb-0"><i class="fas fa-poll text-primary me-2"></i>Leadership Elections</h5>
-                    <span class="badge <?php echo $active ? 'bg-success' : 'bg-danger'; ?> rounded-pill px-3">
-                        <?php echo $active ? 'ELECTION ACTIVE' : 'VOTING CLOSED'; ?>
+                    <?php
+                    $status_badge = $election_status === "open" ? "bg-success" : ($election_status === "upcoming" ? "bg-warning text-dark" : ($election_status === "paused" ? "bg-info text-dark" : "bg-secondary"));
+                    ?>
+                    <span class="badge <?php echo $status_badge; ?> rounded-pill px-3">
+                        <?php echo htmlspecialchars(strtoupper($election_status)); ?>
                     </span>
                 </div>
 
-                <div class="alert alert-<?php echo $active ? 'info' : 'secondary'; ?> rounded-3">
+                <div class="alert alert-<?php echo $active ? 'info' : ($election_status === "upcoming" ? 'warning' : 'secondary'); ?> rounded-3">
                     <?php if ($active): ?>
-                        Elections are currently live! Please support your candidates for the Nehiloth Worship Leadership Committee.
+                        Voting is open. Submit one complete ballot for all positions in this election.
                         <div class="mt-2"><a href="vote.php" class="btn btn-primary btn-sm rounded-pill fw-bold">Proceed to Voting Ballot &rarr;</a></div>
+                    <?php elseif ($election_status === "upcoming"): ?>
+                        This election is scheduled to open later. Review the candidates and election details.
+                        <div class="mt-2"><a href="../voting.php" class="btn btn-outline-primary btn-sm rounded-pill fw-bold">View Election</a></div>
+                    <?php elseif ($election_status === "paused"): ?>
+                        Voting is temporarily paused by an election administrator.
                     <?php else: ?>
                         No active election currently in progress. Check back when the next leadership election is announced.
                     <?php endif; ?>
@@ -125,7 +142,6 @@ $my_applications = $stmt->fetchAll();
                 <h6 class="fw-bold text-secondary mt-3">Leadership Positions</h6>
                 <div class="row g-2">
                     <?php foreach ($positions as $p):
-                        $voted = hasVoted($_SESSION["member_id"], $p["id"]);
                         $cnt = $pdo->prepare("SELECT COUNT(*) FROM candidates WHERE position_id = ?");
                         $cnt->execute([$p["id"]]);
                     ?>
@@ -137,8 +153,8 @@ $my_applications = $stmt->fetchAll();
                                 </div>
                                 <div class="d-flex justify-content-between align-items-center mt-2 pt-2 border-top">
                                     <small class="text-secondary"><?php echo $cnt->fetchColumn(); ?> candidates</small>
-                                    <?php if ($voted): ?>
-                                        <span class="badge bg-success rounded-pill"><i class="fas fa-check-circle me-1"></i>Voted</span>
+                                    <?php if ($member_has_ballot): ?>
+                                        <span class="badge bg-success rounded-pill"><i class="fas fa-check-circle me-1"></i>Ballot submitted</span>
                                     <?php elseif ($active): ?>
                                         <a href="vote.php?position=<?php echo $p["id"]; ?>" class="btn btn-sm btn-outline-primary rounded-pill px-3">Vote</a>
                                     <?php else: ?>

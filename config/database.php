@@ -1,4 +1,5 @@
 <?php
+date_default_timezone_set("Africa/Kigali");
 session_start();
 $host = "localhost";
 $dbname = "nehiloth_voting";

@@ -6,10 +6,240 @@ function isMemberLoggedIn() { return isset($_SESSION["member_id"]); }
 function redirect($url) { header("Location: $url"); exit(); }
 function sanitize($input) { return htmlspecialchars(trim($input), ENT_QUOTES, "UTF-8"); }
 function generateAccessCode() { return strtoupper(substr(str_shuffle("ABCDEFGHJKLMNPQRSTUVWXYZ23456789"), 0, 8)); }
-function isElectionActive() { global $pdo; $stmt = $pdo->query("SELECT election_active FROM settings WHERE id = 1"); $res = $stmt->fetch(); return $res ? (bool)$res["election_active"] : false; }
-function getVoteCount($candidate_id) { global $pdo; $stmt = $pdo->prepare("SELECT COUNT(*) as c FROM votes WHERE candidate_id = ?"); $stmt->execute([$candidate_id]); return (int)$stmt->fetch()["c"]; }
-function hasVoted($member_id, $position_id) { global $pdo; $stmt = $pdo->prepare("SELECT id FROM votes WHERE member_id = ? AND position_id = ?"); $stmt->execute([$member_id, $position_id]); return $stmt->fetch() ? true : false; }
-function getWinner($position_id) { global $pdo; $stmt = $pdo->prepare("SELECT c.*, COUNT(v.id) as votes FROM candidates c LEFT JOIN votes v ON c.id = v.candidate_id WHERE c.position_id = ? GROUP BY c.id ORDER BY votes DESC LIMIT 1"); $stmt->execute([$position_id]); return $stmt->fetch(); }
+function csrfToken() {
+    if (empty($_SESSION["csrf_token"])) {
+        $_SESSION["csrf_token"] = bin2hex(random_bytes(32));
+    }
+    return $_SESSION["csrf_token"];
+}
+function verifyCsrfToken($token) {
+    return is_string($token) && isset($_SESSION["csrf_token"]) && hash_equals($_SESSION["csrf_token"], $token);
+}
+function isElectionActive() {
+    global $pdo;
+    $elections = $pdo->query("SELECT id FROM elections WHERE status IN ('upcoming','open','paused') ORDER BY id DESC")->fetchAll(PDO::FETCH_COLUMN);
+    foreach ($elections as $election_id) {
+        if (getElectionStatus((int)$election_id) === "open") {
+            return true;
+        }
+    }
+    if ((int)$pdo->query("SELECT COUNT(*) FROM elections")->fetchColumn() > 0) {
+        return false;
+    }
+    $stmt = $pdo->query("SELECT election_active FROM settings WHERE id = 1");
+    $res = $stmt->fetch();
+    return $res ? (bool)$res["election_active"] : false;
+}
+function getElectionStatus($election_id) {
+    global $pdo;
+    $stmt = $pdo->prepare("SELECT status, start_time, end_time FROM elections WHERE id = ?");
+    $stmt->execute([(int)$election_id]);
+    $election = $stmt->fetch();
+    if (!$election) {
+        return "missing";
+    }
+    $status = $election["status"];
+    if ($status === "upcoming" && strtotime($election["start_time"]) <= time()) {
+        $pdo->prepare("UPDATE elections SET status = 'open' WHERE id = ? AND status = 'upcoming'")->execute([(int)$election_id]);
+        $status = "open";
+    }
+    if (in_array($status, ["open", "paused"], true) && strtotime($election["end_time"]) <= time()) {
+        $pdo->prepare("UPDATE elections SET status = 'closed' WHERE id = ? AND status IN ('open', 'paused')")->execute([(int)$election_id]);
+        return "closed";
+    }
+    return $status;
+}
+function transitionElection($election_id, $action) {
+    global $pdo;
+    $pdo->beginTransaction();
+    try {
+        $stmt = $pdo->prepare("SELECT * FROM elections WHERE id = ? FOR UPDATE");
+        $stmt->execute([(int)$election_id]);
+        $election = $stmt->fetch();
+        if (!$election) {
+            $pdo->rollBack();
+            return ["success" => false, "message" => "Election not found."];
+        }
+
+        $status = $election["status"];
+        $new_status = null;
+        if ($action === "publish" && $status === "draft") {
+            if (strtotime($election["start_time"]) >= strtotime($election["end_time"]) || strtotime($election["end_time"]) <= time()) {
+                $pdo->rollBack();
+                return ["success" => false, "message" => "The opening time must be before closing, and the closing time must still be in the future."];
+            }
+            $positions = $pdo->prepare("SELECT id FROM positions WHERE election_id = ?");
+            $positions->execute([(int)$election_id]);
+            $position_ids = $positions->fetchAll(PDO::FETCH_COLUMN);
+            if (!$position_ids) {
+                $pdo->rollBack();
+                return ["success" => false, "message" => "Add at least one position before publishing."];
+            }
+            foreach ($position_ids as $position_id) {
+                $candidate = $pdo->prepare("SELECT id FROM candidates WHERE position_id = ? LIMIT 1");
+                $candidate->execute([(int)$position_id]);
+                if (!$candidate->fetch()) {
+                    $pdo->rollBack();
+                    return ["success" => false, "message" => "Every position needs at least one candidate before publishing."];
+                }
+            }
+            $eligible = $pdo->prepare("INSERT IGNORE INTO election_eligible_voters (election_id, member_id) SELECT ?, id FROM members WHERE status = 'approved'");
+            $eligible->execute([(int)$election_id]);
+            $eligible_count = $pdo->prepare("SELECT COUNT(*) FROM election_eligible_voters WHERE election_id = ?");
+            $eligible_count->execute([(int)$election_id]);
+            if ((int)$eligible_count->fetchColumn() === 0) {
+                $pdo->rollBack();
+                return ["success" => false, "message" => "At least one approved member is required before publishing an election."];
+            }
+            $new_status = strtotime($election["start_time"]) <= time() ? "open" : "upcoming";
+            $pdo->prepare("UPDATE elections SET status = ?, published_at = NOW(), results_published = 0 WHERE id = ?")->execute([$new_status, (int)$election_id]);
+        } elseif ($action === "pause" && $status === "open") {
+            $new_status = "paused";
+        } elseif ($action === "resume" && $status === "paused" && strtotime($election["end_time"]) > time()) {
+            $new_status = "open";
+        } elseif ($action === "close" && in_array($status, ["upcoming", "open", "paused"], true)) {
+            $new_status = "closed";
+        } elseif ($action === "cancel" && in_array($status, ["draft", "upcoming"], true)) {
+            $new_status = "cancelled";
+        } elseif ($action === "publish_results" && $status === "closed" && !(bool)$election["results_published"]) {
+            $pdo->prepare("UPDATE elections SET results_published = 1 WHERE id = ?")->execute([(int)$election_id]);
+            $new_status = "closed";
+        } else {
+            $pdo->rollBack();
+            return ["success" => false, "message" => "That action is not allowed for the current election status."];
+        }
+
+        if ($new_status !== $status) {
+            $pdo->prepare("UPDATE elections SET status = ? WHERE id = ?")->execute([$new_status, (int)$election_id]);
+        }
+        $pdo->commit();
+        return ["success" => true, "message" => "Election updated successfully."];
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        error_log("Unable to transition election: " . $e->getMessage());
+        return ["success" => false, "message" => "The election could not be updated. Check the server logs and try again."];
+    }
+}
+function hasVotedInElection($member_id, $election_id) {
+    global $pdo;
+    $stmt = $pdo->prepare("SELECT id FROM election_vote_receipts WHERE election_id = ? AND member_id = ? LIMIT 1");
+    $stmt->execute([(int)$election_id, (int)$member_id]);
+    return (bool)$stmt->fetch();
+}
+function submitElectionBallot($member_id, $election_id, $selections, $idempotency_key) {
+    global $pdo;
+    if (!is_array($selections) || !is_string($idempotency_key) || strlen($idempotency_key) < 16 || strlen($idempotency_key) > 128) {
+        return ["success" => false, "message" => "The ballot is incomplete or invalid."];
+    }
+
+    try {
+        $pdo->beginTransaction();
+        $election_stmt = $pdo->prepare("SELECT id, status, start_time, end_time FROM elections WHERE id = ? FOR UPDATE");
+        $election_stmt->execute([(int)$election_id]);
+        $election = $election_stmt->fetch();
+        if (!$election) {
+            $pdo->rollBack();
+            return ["success" => false, "message" => "Election not found."];
+        }
+
+        $member_stmt = $pdo->prepare("SELECT id FROM members WHERE id = ? AND status = 'approved'");
+        $member_stmt->execute([(int)$member_id]);
+        if (!$member_stmt->fetch()) {
+            $pdo->rollBack();
+            return ["success" => false, "message" => "Only approved members may vote."];
+        }
+
+        $idempotency_hash = hash("sha256", $idempotency_key);
+        $existing = $pdo->prepare("SELECT id, idempotency_hash, receipt_code, receipt_hash FROM election_vote_receipts WHERE election_id = ? AND member_id = ?");
+        $existing->execute([(int)$election_id, (int)$member_id]);
+        $receipt = $existing->fetch();
+        if ($receipt) {
+            $pdo->rollBack();
+            $receipt_valid = is_string($receipt["receipt_code"]) && hash_equals($receipt["receipt_hash"], hash("sha256", $receipt["receipt_code"]));
+            if (!$receipt_valid) {
+                error_log("Election receipt integrity check failed for receipt row " . (int)$receipt["id"]);
+            }
+            $same_request = hash_equals($receipt["idempotency_hash"], $idempotency_hash);
+            return [
+                "success" => $same_request && $receipt_valid,
+                "duplicate" => true,
+                "receipt" => $same_request && $receipt_valid ? $receipt["receipt_code"] : null,
+                "message" => !$receipt_valid
+                    ? "The existing ballot receipt could not be verified. Contact an election administrator."
+                    : ($same_request
+                    ? "This ballot was already recorded."
+                    : "A ballot has already been submitted for this election.")
+            ];
+        }
+
+        $now = time();
+        if ($election["status"] === "upcoming" && strtotime($election["start_time"]) <= $now) {
+            $pdo->prepare("UPDATE elections SET status = 'open' WHERE id = ? AND status = 'upcoming'")->execute([(int)$election_id]);
+            $election["status"] = "open";
+        }
+        if (in_array($election["status"], ["open", "paused"], true) && strtotime($election["end_time"]) <= $now) {
+            $pdo->prepare("UPDATE elections SET status = 'closed' WHERE id = ? AND status IN ('open', 'paused')")->execute([(int)$election_id]);
+            $pdo->commit();
+            return ["success" => false, "message" => "Voting has closed for this election."];
+        }
+        if ($election["status"] !== "open" || strtotime($election["start_time"]) > $now) {
+            $pdo->rollBack();
+            return ["success" => false, "message" => "Voting is not currently open for this election."];
+        }
+
+        $eligible_stmt = $pdo->prepare("SELECT member_id FROM election_eligible_voters WHERE election_id = ? AND member_id = ?");
+        $eligible_stmt->execute([(int)$election_id, (int)$member_id]);
+        if (!$eligible_stmt->fetch()) {
+            $pdo->rollBack();
+            return ["success" => false, "message" => "You are not on this election's frozen eligible-voter list."];
+        }
+
+        $positions_stmt = $pdo->prepare("SELECT id FROM positions WHERE election_id = ? ORDER BY id");
+        $positions_stmt->execute([(int)$election_id]);
+        $position_ids = array_map("intval", $positions_stmt->fetchAll(PDO::FETCH_COLUMN));
+        $normalized = [];
+        foreach ($selections as $position_id => $candidate_id) {
+            $position_id = filter_var($position_id, FILTER_VALIDATE_INT);
+            $candidate_id = filter_var($candidate_id, FILTER_VALIDATE_INT);
+            if (!$position_id || !$candidate_id || !in_array($position_id, $position_ids, true)) {
+                $pdo->rollBack();
+                return ["success" => false, "message" => "One or more selections are invalid."];
+            }
+            $candidate_stmt = $pdo->prepare("SELECT id FROM candidates WHERE id = ? AND position_id = ?");
+            $candidate_stmt->execute([(int)$candidate_id, (int)$position_id]);
+            if (!$candidate_stmt->fetch()) {
+                $pdo->rollBack();
+                return ["success" => false, "message" => "A selected candidate does not belong to the selected position."];
+            }
+            $normalized[(int)$position_id] = (int)$candidate_id;
+        }
+        if (!$position_ids || count($normalized) !== count($position_ids)) {
+            $pdo->rollBack();
+            return ["success" => false, "message" => "Select one candidate for every position before submitting your ballot."];
+        }
+
+        $ballot_group = bin2hex(random_bytes(32));
+        $receipt_code = bin2hex(random_bytes(16));
+        $receipt_insert = $pdo->prepare("INSERT INTO election_vote_receipts (election_id, member_id, idempotency_hash, receipt_code, receipt_hash) VALUES (?, ?, ?, ?, ?)");
+        $receipt_insert->execute([(int)$election_id, (int)$member_id, $idempotency_hash, $receipt_code, hash("sha256", $receipt_code)]);
+        $ballot_insert = $pdo->prepare("INSERT INTO ballots (election_id, position_id, candidate_id, anonymous_hash, ballot_group) VALUES (?, ?, ?, ?, ?)");
+        $eligibility_insert = $pdo->prepare("INSERT INTO voting_eligibility (election_id, member_id, position_id, has_voted) VALUES (?, ?, ?, 1)");
+        foreach ($normalized as $position_id => $candidate_id) {
+            $ballot_insert->execute([(int)$election_id, $position_id, $candidate_id, bin2hex(random_bytes(32)), $ballot_group]);
+            $eligibility_insert->execute([(int)$election_id, (int)$member_id, $position_id]);
+        }
+        $pdo->commit();
+        return ["success" => true, "message" => "Your ballot has been recorded.", "receipt" => $receipt_code];
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        error_log("Unable to submit election ballot: " . $e->getMessage());
+        return ["success" => false, "message" => "Your ballot could not be confirmed. Retry safely; duplicate submissions are prevented."];
+    }
+}
 function setFlash($type, $msg) { $_SESSION["flash"] = ["type" => $type, "message" => $msg]; }
 function getFlash() { if (isset($_SESSION["flash"])) { $f = $_SESSION["flash"]; unset($_SESSION["flash"]); return $f; } return null; }
 function logAction($admin_id, $action) { global $pdo; $stmt = $pdo->prepare("INSERT INTO admin_logs (admin_id, action, ip_address) VALUES (?, ?, ?)"); $stmt->execute([$admin_id, $action, $_SERVER["REMOTE_ADDR"]]); }
@@ -34,47 +264,6 @@ function getUnreadNotifications() {
 function markNotificationsRead() {
     global $pdo;
     $pdo->exec("UPDATE notifications SET is_read = 1 WHERE is_read = 0");
-}
-
-function getVoteDetails($candidate_id) {
-    global $pdo;
-    $stmt = $pdo->prepare("
-        SELECT m.name as member_name, m.email, v.created_at 
-        FROM votes v 
-        JOIN members m ON v.member_id = m.id 
-        WHERE v.candidate_id = ?
-        ORDER BY v.created_at DESC
-    ");
-    $stmt->execute([$candidate_id]);
-    return $stmt->fetchAll();
-}
-
-function generateVoteReport() {
-    global $pdo;
-    $positions = $pdo->query("SELECT * FROM positions")->fetchAll();
-    $report = [];
-    foreach ($positions as $pos) {
-        $candidates = $pdo->prepare("SELECT * FROM candidates WHERE position_id = ?");
-        $candidates->execute([$pos["id"]]);
-        $cands = $candidates->fetchAll();
-        $positionData = [
-            "title" => $pos["title"],
-            "candidates" => []
-        ];
-        foreach ($cands as $c) {
-            $votes = getVoteCount($c["id"]);
-            $voters = getVoteDetails($c["id"]);
-            $positionData["candidates"][] = [
-                "name" => $c["name"],
-                "bio" => $c["bio"],
-                "votes" => $votes,
-                "voters" => $voters
-            ];
-        }
-        $positionData["winner"] = getWinner($pos["id"]);
-        $report[] = $positionData;
-    }
-    return $report;
 }
 
 // ========== MEMBER NOTIFICATIONS ==========
@@ -278,7 +467,7 @@ function getDashboardStats() {
         $stats["approved_members"] = (int)$pdo->query("SELECT COUNT(*) FROM members WHERE status = 'approved'")->fetchColumn();
         $stats["total_song_requests"] = (int)$pdo->query("SELECT COUNT(*) FROM song_requests")->fetchColumn();
         $stats["pending_songs"] = (int)$pdo->query("SELECT COUNT(*) FROM song_requests WHERE status = 'pending'")->fetchColumn();
-        $stats["total_votes_cast"] = (int)$pdo->query("SELECT COUNT(*) FROM votes")->fetchColumn();
+        $stats["total_votes_cast"] = (int)$pdo->query("SELECT COUNT(*) FROM election_vote_receipts")->fetchColumn();
         $stats["pending_applications"] = (int)$pdo->query("SELECT COUNT(*) FROM worship_applications WHERE status = 'pending'")->fetchColumn();
         $stats["leadership_count"] = (int)$pdo->query("SELECT COUNT(*) FROM leadership")->fetchColumn();
     } catch (PDOException $e) {}

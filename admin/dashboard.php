@@ -4,7 +4,14 @@ if (!isAdminLoggedIn()) redirect("login.php");
 
 $stats = getDashboardStats();
 
-$recentVotes = $pdo->query("SELECT b.voted_at as created_at, p.title as position, c.name as candidate_name FROM ballots b JOIN positions p ON b.position_id=p.id JOIN candidates c ON b.candidate_id=c.id ORDER BY b.voted_at DESC LIMIT 5")->fetchAll();
+$recentVotes = $pdo->query("
+    SELECT e.title, COUNT(r.id) AS ballot_count, MAX(r.submitted_at) AS latest_submission
+    FROM elections e
+    LEFT JOIN election_vote_receipts r ON r.election_id = e.id
+    GROUP BY e.id, e.title
+    ORDER BY e.created_at DESC
+    LIMIT 5
+")->fetchAll();
 $recentSongs = getSongRequests('pending', null, 5);
 $recentApplications = getWorshipApplications('pending');
 ?>
@@ -181,30 +188,28 @@ $recentApplications = getWorshipApplications('pending');
                     </div>
                 </div>
 
-                <!-- Secret Ballot Voting Activity Log -->
+                <!-- Aggregate Election Participation -->
                 <div class="col-12">
                     <div class="card border-0 shadow-sm rounded-4 p-3 bg-white">
-                        <h6 class="fw-bold text-dark mb-3"><i class="fas fa-user-check text-primary me-2"></i>Recent Secret Ballots Cast (Anonymized)</h6>
+                        <h6 class="fw-bold text-dark mb-3"><i class="fas fa-user-check text-primary me-2"></i>Election Participation (Aggregate)</h6>
                         <div class="table-responsive">
                             <table class="table table-hover table-sm align-middle mb-0">
                                 <thead class="table-light">
                                     <tr>
-                                        <th>Time Cast</th>
-                                        <th>Position Contested</th>
-                                        <th>Candidate Voted</th>
-                                        <th>Anonymity Status</th>
+                                        <th>Election</th>
+                                        <th>Ballots Submitted</th>
+                                        <th>Latest Submission</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     <?php if (empty($recentVotes)): ?>
-                                        <tr><td colspan="4" class="text-center py-3 text-muted">No secret ballots cast yet.</td></tr>
+                                        <tr><td colspan="3" class="text-center py-3 text-muted">No election participation recorded yet.</td></tr>
                                     <?php else: ?>
                                         <?php foreach ($recentVotes as $rv): ?>
                                             <tr>
-                                                <td><small class="text-muted"><?php echo date("H:i:s", strtotime($rv["created_at"])); ?></small></td>
-                                                <td><span class="badge bg-light text-dark border"><?php echo htmlspecialchars($rv["position"]); ?></span></td>
-                                                <td><span class="fw-bold text-primary"><?php echo htmlspecialchars($rv["candidate_name"]); ?></span></td>
-                                                <td><span class="badge bg-success rounded-pill"><i class="fas fa-lock me-1"></i>Secret Ballot</span></td>
+                                                <td><?php echo htmlspecialchars($rv["title"]); ?></td>
+                                                <td><?php echo (int)$rv["ballot_count"]; ?></td>
+                                                <td><small class="text-muted"><?php echo $rv["latest_submission"] ? htmlspecialchars(date("M d, H:i", strtotime($rv["latest_submission"]))) : "Not yet"; ?></small></td>
                                             </tr>
                                         <?php endforeach; ?>
                                     <?php endif; ?>

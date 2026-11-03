@@ -1,13 +1,42 @@
 <?php
 require_once "config/functions.php";
 
-$election = $pdo->query("SELECT * FROM elections WHERE status = 'open' ORDER BY id DESC LIMIT 1")->fetch();
+$requested_election_id = filter_var($_GET["election_id"] ?? null, FILTER_VALIDATE_INT);
+$elections = $pdo->query("
+    SELECT id, title, status FROM elections
+    WHERE status NOT IN ('draft','cancelled')
+    ORDER BY start_time DESC, id DESC
+")->fetchAll();
+$election = null;
+if ($requested_election_id) {
+    $selected = $pdo->prepare("SELECT * FROM elections WHERE id = ? AND status NOT IN ('draft','cancelled')");
+    $selected->execute([(int)$requested_election_id]);
+    $election = $selected->fetch();
+} else {
+    foreach ($elections as $available_election) {
+        $available_status = getElectionStatus((int)$available_election["id"]);
+        if (in_array($available_status, ["upcoming", "open", "paused"], true)) {
+            $selected = $pdo->prepare("SELECT * FROM elections WHERE id = ?");
+            $selected->execute([(int)$available_election["id"]]);
+            $election = $selected->fetch();
+            break;
+        }
+    }
+}
 if (!$election) {
-    $election = $pdo->query("SELECT * FROM elections ORDER BY id DESC LIMIT 1")->fetch();
+    $election = $pdo->query("SELECT * FROM elections WHERE status = 'closed' ORDER BY end_time DESC, id DESC LIMIT 1")->fetch();
 }
 
-$election_id = $election ? $election['id'] : 0;
-$status = $election ? strtoupper($election['status']) : 'CLOSED';
+$election_id = $election ? (int)$election['id'] : 0;
+$status = $election ? strtoupper(getElectionStatus($election_id)) : 'CLOSED';
+$election = $election_id ? $pdo->query("SELECT * FROM elections WHERE id = " . $election_id)->fetch() : null;
+$memberHasVoted = $election_id && isMemberLoggedIn() ? hasVotedInElection($_SESSION['member_id'], $election_id) : false;
+$memberEligible = false;
+if ($election_id && isMemberLoggedIn()) {
+    $eligibility = $pdo->prepare("SELECT 1 FROM election_eligible_voters WHERE election_id = ? AND member_id = ?");
+    $eligibility->execute([$election_id, (int)$_SESSION['member_id']]);
+    $memberEligible = (bool)$eligibility->fetchColumn();
+}
 
 // Fetch positions & candidates
 $positions = [];
@@ -18,46 +47,35 @@ if ($election_id > 0) {
 }
 
 // Handle Vote Submission
-if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['action'] == 'submit_ballot') {
+if ($_SERVER["REQUEST_METHOD"] === "POST" && ($_POST["action"] ?? "") === "submit_ballot") {
     if (!isMemberLoggedIn()) {
         setFlash("warning", "Please log in with your phone number and password to cast your vote.");
         redirect("login.php?redirect=voting.php");
     }
 
-    $member_id = $_SESSION['member_id'];
-    $position_id = (int)$_POST['position_id'];
-    $candidate_id = (int)$_POST['candidate_id'];
-
-    // Check election open
-    if ($status !== 'OPEN') {
-        setFlash("danger", "Voting is currently closed for this election.");
-        redirect("voting.php");
+    if (!verifyCsrfToken($_POST["csrf_token"] ?? null)) {
+        setFlash("danger", "Your session expired. Refresh the page and review your ballot again.");
+        redirect("voting.php?election_id=" . $election_id);
     }
 
-    // Check duplicate vote
-    $chk = $pdo->prepare("SELECT id FROM voting_eligibility WHERE election_id = ? AND member_id = ? AND position_id = ?");
-    $chk->execute([$election_id, $member_id, $position_id]);
-    if ($chk->fetch()) {
-        setFlash("warning", "Your vote has already been recorded for this position.");
-    } else {
-        try {
-            $pdo->beginTransaction();
-            $pdo->prepare("INSERT INTO voting_eligibility (election_id, member_id, position_id, has_voted) VALUES (?, ?, ?, 1)")
-                ->execute([$election_id, $member_id, $position_id]);
-
-            $anon_hash = hash('sha256', $member_id . '_' . $election_id . '_' . time() . '_' . mt_rand());
-
-            $pdo->prepare("INSERT INTO ballots (election_id, position_id, candidate_id, anonymous_hash) VALUES (?, ?, ?, ?)")
-                ->execute([$election_id, $position_id, $candidate_id, $anon_hash]);
-
-            $pdo->commit();
-            setFlash("success", "Your vote has been securely recorded!");
-        } catch (Exception $e) {
-            $pdo->rollBack();
-            setFlash("danger", "Failed to submit vote. Please try again.");
-        }
+    $result = submitElectionBallot(
+        (int)$_SESSION['member_id'],
+        $election_id,
+        $_POST["selections"] ?? [],
+        $_POST["idempotency_key"] ?? ""
+    );
+    if (!empty($result["success"]) && !empty($result["receipt"])) {
+        $result["message"] .= " Receipt: " . $result["receipt"];
     }
-    redirect("voting.php");
+    if (!empty($result["success"])) {
+        unset($_SESSION["ballot_idempotency_keys"][$election_id]);
+    }
+    setFlash(!empty($result["success"]) ? "success" : "danger", $result["message"]);
+    redirect("voting.php?election_id=" . $election_id);
+}
+
+if ($election_id && isMemberLoggedIn() && empty($_SESSION["ballot_idempotency_keys"][$election_id])) {
+    $_SESSION["ballot_idempotency_keys"][$election_id] = bin2hex(random_bytes(16));
 }
 ?>
 <!DOCTYPE html>
@@ -97,6 +115,23 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['a
         </div>
     <?php endif; ?>
 
+    <?php if (count($elections) > 1): ?>
+        <form method="GET" action="voting.php" class="bg-white rounded-4 shadow-sm p-3 mb-4 d-flex flex-wrap align-items-end gap-3">
+            <div class="flex-grow-1">
+                <label for="election_id" class="form-label fw-bold mb-1">Choose an election</label>
+                <select id="election_id" name="election_id" class="form-select">
+                    <?php foreach ($elections as $available_election): ?>
+                        <?php $option_status = strtoupper(getElectionStatus((int)$available_election["id"])); ?>
+                        <option value="<?php echo (int)$available_election["id"]; ?>" <?php echo (int)$available_election["id"] === $election_id ? "selected" : ""; ?>>
+                            <?php echo htmlspecialchars($available_election["title"]); ?> (<?php echo htmlspecialchars($option_status); ?>)
+                        </option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <button type="submit" class="btn btn-primary rounded-pill px-4">View election</button>
+        </form>
+    <?php endif; ?>
+
     <!-- Login Required Prompt Banner if not authenticated -->
     <?php if (!isMemberLoggedIn() && !isAdminLoggedIn()): ?>
         <div class="bg-dark text-white rounded-4 p-4 shadow-sm mb-4 border border-warning">
@@ -121,11 +156,15 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['a
     <div class="d-flex justify-content-between align-items-center bg-white p-3 rounded-4 shadow-sm mb-4">
         <div>
             <h5 class="fw-bold text-dark mb-0"><i class="fas fa-user-check text-primary me-2"></i>Secret Ballot System</h5>
-            <small class="text-muted">1 Member, 1 Vote per Position. Votes are anonymized and untraceable to identity.</small>
+            <small class="text-muted">One complete ballot per eligible member. Voter eligibility and ballot selections are stored separately; cryptographic anonymity is not provided.</small>
         </div>
-        <button class="btn btn-outline-primary rounded-pill px-4 fw-bold" data-bs-toggle="modal" data-bs-target="#resultsModal">
-            <i class="fas fa-chart-bar me-1"></i> View Live Results
-        </button>
+        <?php if ($election && $status === 'CLOSED' && !empty($election['results_published'])): ?>
+            <button class="btn btn-outline-primary rounded-pill px-4 fw-bold" data-bs-toggle="modal" data-bs-target="#resultsModal">
+                <i class="fas fa-chart-bar me-1"></i> View Official Results
+            </button>
+        <?php else: ?>
+            <span class="badge bg-secondary rounded-pill px-3 py-2">Results available after verification</span>
+        <?php endif; ?>
     </div>
 
     <!-- Committee Positions & Candidate Manifestos -->
@@ -135,12 +174,16 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['a
             <h4 class="text-secondary">No positions configured for this election.</h4>
         </div>
     <?php else: ?>
+        <form method="POST" action="voting.php?election_id=<?php echo $election_id; ?>">
+            <input type="hidden" name="action" value="submit_ballot">
+            <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(csrfToken()); ?>">
+            <input type="hidden" name="idempotency_key" value="<?php echo htmlspecialchars($_SESSION["ballot_idempotency_keys"][$election_id] ?? ""); ?>">
         <?php foreach ($positions as $p):
             $cands = $pdo->prepare("SELECT * FROM candidates WHERE position_id = ?");
             $cands->execute([$p['id']]);
             $cand_list = $cands->fetchAll();
 
-            $voted = isMemberLoggedIn() ? hasVoted($_SESSION['member_id'], $p['id']) : false;
+            $voted = $memberHasVoted;
         ?>
             <div class="bg-white rounded-4 p-4 shadow-sm mb-5">
                 <div class="d-flex justify-content-between align-items-center border-bottom pb-3 mb-4">
@@ -179,23 +222,21 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['a
                                     </div>
 
                                     <div class="pt-3 border-top mt-3">
-                                        <?php if ($voted): ?>
-                                            <button class="btn btn-secondary w-100 rounded-pill disabled" disabled><i class="fas fa-check me-1"></i> Voted</button>
+                                        <?php if ($memberHasVoted): ?>
+                                            <span class="badge bg-success w-100 p-2"><i class="fas fa-check me-1"></i> Ballot submitted</span>
                                         <?php elseif (!isMemberLoggedIn()): ?>
                                             <a href="login.php?redirect=voting.php" class="btn btn-outline-primary w-100 rounded-pill fw-bold">
                                                 <i class="fas fa-sign-in-alt me-1"></i> Log In to Vote
                                             </a>
+                                        <?php elseif (!$memberEligible): ?>
+                                            <span class="badge bg-secondary w-100 p-2">Not on the eligible-voter list</span>
                                         <?php elseif ($status == 'OPEN'): ?>
-                                            <form method="POST">
-                                                <input type="hidden" name="action" value="submit_ballot">
-                                                <input type="hidden" name="position_id" value="<?php echo $p['id']; ?>">
-                                                <input type="hidden" name="candidate_id" value="<?php echo $c['id']; ?>">
-                                                <button type="submit" class="btn btn-primary w-100 rounded-pill fw-bold shadow-sm" onclick="return confirm('Confirm vote for <?php echo htmlspecialchars($c['name']); ?>?');">
-                                                    <i class="fas fa-vote-yea me-1"></i> Vote for <?php echo htmlspecialchars($c['name']); ?>
-                                                </button>
-                                            </form>
+                                            <div class="form-check">
+                                                <input class="form-check-input" type="radio" name="selections[<?php echo (int)$p['id']; ?>]" value="<?php echo (int)$c['id']; ?>" id="candidate_<?php echo (int)$p['id']; ?>_<?php echo (int)$c['id']; ?>" required>
+                                                <label class="form-check-label fw-semibold" for="candidate_<?php echo (int)$p['id']; ?>_<?php echo (int)$c['id']; ?>">Select this candidate</label>
+                                            </div>
                                         <?php else: ?>
-                                            <button class="btn btn-outline-secondary w-100 rounded-pill disabled" disabled>Voting Closed</button>
+                                            <span class="badge bg-secondary w-100 p-2">Voting <?php echo htmlspecialchars(strtolower($status)); ?></span>
                                         <?php endif; ?>
                                     </div>
                                 </div>
@@ -205,6 +246,15 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['a
                 </div>
             </div>
         <?php endforeach; ?>
+            <?php if ($status === 'OPEN' && isMemberLoggedIn() && $memberEligible && !$memberHasVoted): ?>
+                <div class="text-center mb-5">
+                    <p class="text-muted">One ballot per election. Your selections cannot be changed after submission.</p>
+                    <button type="submit" class="btn btn-success btn-lg rounded-pill px-5" onclick="return confirm('Submit your complete ballot? You cannot vote again in this election.')">
+                        <i class="fas fa-lock me-1"></i> Submit Complete Ballot
+                    </button>
+                </div>
+            <?php endif; ?>
+        </form>
     <?php endif; ?>
 </div>
 
@@ -213,13 +263,18 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['a
     <div class="modal-dialog modal-dialog-centered modal-lg">
         <div class="modal-content rounded-4 border-0 shadow">
             <div class="modal-header bg-dark text-white rounded-top-4">
-                <h5 class="modal-title fw-bold"><i class="fas fa-chart-bar text-warning me-2"></i>Election Live Results</h5>
+                <h5 class="modal-title fw-bold"><i class="fas fa-chart-bar text-warning me-2"></i>Official Election Results</h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body p-4">
+                <?php if ($election && $status === 'CLOSED' && !empty($election['results_published'])): ?>
                 <?php foreach ($positions as $p):
-                    $pos_votes = (int)$pdo->query("SELECT COUNT(*) FROM ballots WHERE position_id = " . $p['id'])->fetchColumn();
-                    $cands_res = $pdo->query("SELECT c.*, COUNT(b.id) as cnt FROM candidates c LEFT JOIN ballots b ON c.id = b.candidate_id WHERE c.position_id = " . $p['id'] . " GROUP BY c.id ORDER BY cnt DESC")->fetchAll();
+                    $total_stmt = $pdo->prepare("SELECT COUNT(*) FROM ballots WHERE election_id = ? AND position_id = ?");
+                    $total_stmt->execute([$election_id, (int)$p['id']]);
+                    $pos_votes = (int)$total_stmt->fetchColumn();
+                    $cands_stmt = $pdo->prepare("SELECT c.*, COUNT(b.id) as cnt FROM candidates c LEFT JOIN ballots b ON c.id = b.candidate_id AND b.election_id = ? WHERE c.position_id = ? GROUP BY c.id ORDER BY cnt DESC");
+                    $cands_stmt->execute([$election_id, (int)$p['id']]);
+                    $cands_res = $cands_stmt->fetchAll();
                 ?>
                     <div class="mb-4 p-3 border rounded-3 bg-light">
                         <h5 class="fw-bold text-primary mb-1"><?php echo htmlspecialchars($p['title']); ?></h5>
@@ -240,6 +295,9 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['a
                         <?php endforeach; ?>
                     </div>
                 <?php endforeach; ?>
+                <?php else: ?>
+                    <p class="text-center text-muted mb-0">Official results will appear here after the election is closed and results are published.</p>
+                <?php endif; ?>
             </div>
         </div>
     </div>
