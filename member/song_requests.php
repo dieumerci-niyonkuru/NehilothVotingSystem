@@ -6,26 +6,58 @@ $member_id = $_SESSION['member_id'];
 $member_name = $_SESSION['member_name'];
 
 // Handle new song request
-if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['action'] == 'add_song') {
-    $title = sanitize($_POST['song_title']);
-    $artist = sanitize($_POST['artist']);
-    $cat = sanitize($_POST['genre_category']);
-    $key = sanitize($_POST['key_note']);
-    $link = sanitize($_POST['lyrics_link']);
-    $notes = sanitize($_POST['notes']);
+if ($_SERVER["REQUEST_METHOD"] === "POST") {
+    if (!verifyCsrfToken($_POST["csrf_token"] ?? null)) {
+        setFlash("danger", "Your session expired. Refresh the page and try again.");
+        redirect("song_requests.php");
+    }
 
-    if (!empty($title)) {
-        if (addSongRequest($member_id, $member_name, $title, $artist, $cat, $key, $link, $notes)) {
-            setFlash("success", "Worship song request submitted successfully!");
-        } else {
-            setFlash("danger", "Failed to submit request.");
+    $action = $_POST["action"] ?? "";
+    if ($action === "add_song") {
+        $title = trim($_POST["song_title"] ?? "");
+        $artist = trim($_POST["artist"] ?? "");
+        $cat = $_POST["genre_category"] ?? "Worship";
+        $key = trim($_POST["key_note"] ?? "");
+        $link = trim($_POST["lyrics_link"] ?? "");
+        $mediaLink = trim($_POST["media_url"] ?? "");
+        $notes = trim($_POST["notes"] ?? "");
+        $uploadPath = null;
+        try {
+            if ($title === "" || strlen($title) > 255 || strlen($artist) > 100 || strlen($key) > 20 ||
+                strlen($notes) > 5000 || !in_array($cat, ["Worship", "Praise", "Hymn", "Special"], true) ||
+                ($link !== "" && !isSafeMediaUrl($link)) || ($mediaLink !== "" && !isSafeMediaUrl($mediaLink))) {
+                throw new RuntimeException("Check the song title, category, and HTTP(S) links.");
+            }
+            if (!empty($_FILES["audio_file"]["name"])) {
+                if ($mediaLink !== "") {
+                    throw new RuntimeException("Choose an audio upload or an audio link, not both.");
+                }
+                $uploadPath = storeSongAudio($_FILES["audio_file"]);
+            }
+            if (addSongRequest($member_id, $member_name, $title, $artist, $cat, $key, $link, $notes, $uploadPath ?: ($mediaLink ?: null))) {
+                setFlash("success", "Worship song submitted for review.");
+            } else {
+                if ($uploadPath) {
+                    $storedFile = dirname(__DIR__) . DIRECTORY_SEPARATOR . str_replace("/", DIRECTORY_SEPARATOR, $uploadPath);
+                    if (is_file($storedFile) && !unlink($storedFile)) {
+                        error_log("Unable to remove unused uploaded song file: " . $storedFile);
+                    }
+                }
+                setFlash("danger", "The song request could not be saved.");
+            }
+        } catch (RuntimeException $e) {
+            setFlash("danger", $e->getMessage());
         }
+    } elseif ($action === "delete_own_song") {
+        $songId = filter_var($_POST["song_id"] ?? null, FILTER_VALIDATE_INT);
+        $deleted = $songId ? deleteOwnPendingSongRequest($songId, $member_id) : false;
+        setFlash($deleted ? "success" : "warning", $deleted ? "Pending song request removed." : "Only your pending song requests can be removed.");
     }
     redirect("song_requests.php");
 }
 
 $my_songs = getMemberSongRequests($member_id);
-$all_songs = getSongRequests();
+$all_songs = getPublicSongRequests(null, 100);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -73,6 +105,17 @@ $all_songs = getSongRequests();
                                     <span class="badge bg-secondary"><?php echo strtoupper($ms['status']); ?></span>
                                 </div>
                                 <small class="text-muted"><?php echo htmlspecialchars($ms['artist']); ?> &bull; Upvotes: <?php echo $ms['votes_count']; ?></small>
+                                <?php if (!empty($ms["media_url"])): ?>
+                                    <a class="small d-block mt-1" href="<?php echo htmlspecialchars($ms["media_url"]); ?>" target="_blank" rel="noopener noreferrer">Preview submitted recording/link</a>
+                                <?php endif; ?>
+                                <?php if ($ms["status"] === "pending"): ?>
+                                    <form method="POST" class="mt-2" onsubmit="return confirm('Remove this pending song request?');">
+                                        <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(csrfToken()); ?>">
+                                        <input type="hidden" name="action" value="delete_own_song">
+                                        <input type="hidden" name="song_id" value="<?php echo (int)$ms["id"]; ?>">
+                                        <button class="btn btn-sm btn-outline-danger">Remove pending request</button>
+                                    </form>
+                                <?php endif; ?>
                             </div>
                         <?php endforeach; ?>
                     </div>
@@ -98,13 +141,29 @@ $all_songs = getSongRequests();
                             <?php foreach ($all_songs as $as): ?>
                                 <tr>
                                     <td class="fw-bold"><?php echo htmlspecialchars($as['song_title']); ?></td>
-                                    <td><?php echo htmlspecialchars($as['artist']); ?></td>
+                                    <td>
+                                        <?php echo htmlspecialchars($as['artist']); ?>
+                                        <?php if (!empty($as["media_url"])): ?>
+                                            <?php $audioExtension = strtolower(pathinfo((string)parse_url($as["media_url"], PHP_URL_PATH), PATHINFO_EXTENSION)); ?>
+                                            <?php if (in_array($audioExtension, ["mp3", "m4a", "wav", "ogg", "oga", "webm"], true)): ?>
+                                                <audio controls preload="none" class="d-block mt-2" style="max-width:220px"><source src="<?php echo htmlspecialchars($as["media_url"]); ?>"></audio>
+                                            <?php else: ?>
+                                                <a href="<?php echo htmlspecialchars($as["media_url"]); ?>" target="_blank" rel="noopener noreferrer" class="small d-block mt-1">Play song link</a>
+                                            <?php endif; ?>
+                                        <?php endif; ?>
+                                    </td>
                                     <td><span class="badge bg-light text-dark"><?php echo htmlspecialchars($as['genre_category']); ?></span></td>
                                     <td><span class="fw-bold text-primary"><?php echo $as['votes_count']; ?></span></td>
                                     <td>
-                                        <a href="../songs.php?vote_id=<?php echo $as['id']; ?>" class="btn btn-sm btn-outline-primary rounded-pill">
-                                            <i class="fas fa-thumbs-up"></i>
-                                        </a>
+                                        <form method="POST" action="../songs.php">
+                                            <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(csrfToken()); ?>">
+                                            <input type="hidden" name="action" value="vote_song">
+                                            <input type="hidden" name="song_id" value="<?php echo (int)$as['id']; ?>">
+                                            <input type="hidden" name="category" value="<?php echo htmlspecialchars($as['genre_category']); ?>">
+                                            <button type="submit" class="btn btn-sm btn-outline-primary rounded-pill" aria-label="Upvote <?php echo htmlspecialchars($as['song_title']); ?>">
+                                                <i class="fas fa-thumbs-up"></i>
+                                            </button>
+                                        </form>
                                     </td>
                                 </tr>
                             <?php endforeach; ?>
@@ -124,8 +183,9 @@ $all_songs = getSongRequests();
                 <h5 class="modal-title fw-bold"><i class="fas fa-music text-warning me-2"></i>New Worship Song Request</h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
-            <form method="POST">
+            <form method="POST" enctype="multipart/form-data">
                 <div class="modal-body">
+                    <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(csrfToken()); ?>">
                     <input type="hidden" name="action" value="add_song">
                     <div class="mb-3">
                         <label class="form-label fw-semibold">Song Title <span class="text-danger">*</span></label>
@@ -151,8 +211,17 @@ $all_songs = getSongRequests();
                         </div>
                     </div>
                     <div class="mb-3">
-                        <label class="form-label fw-semibold">YouTube / Lyrics Link</label>
+                        <label class="form-label fw-semibold">Lyrics / reference link</label>
                         <input type="url" name="lyrics_link" class="form-control" placeholder="https://">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Public song link</label>
+                        <input type="url" name="media_url" class="form-control" placeholder="https://">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Or upload your recording</label>
+                        <input type="file" name="audio_file" class="form-control" accept=".mp3,.m4a,.wav,.ogg,.oga,.webm,audio/*">
+                        <div class="form-text">MP3, M4A, WAV, OGG, or WebM, up to 32 MB. Recordings are reviewed before public playback.</div>
                     </div>
                     <div class="mb-3">
                         <label class="form-label fw-semibold">Notes / Special Request Reason</label>

@@ -10,12 +10,14 @@ CREATE TABLE IF NOT EXISTS song_requests (
     genre_category VARCHAR(100) DEFAULT 'Worship',
     key_note VARCHAR(20) DEFAULT 'C',
     lyrics_link TEXT NULL,
+    media_url TEXT NULL,
     notes TEXT NULL,
     status ENUM('pending','approved','scheduled','rejected') DEFAULT 'pending',
     votes_count INT DEFAULT 0,
     requested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (member_id) REFERENCES members(id) ON DELETE SET NULL
 );
+ALTER TABLE song_requests ADD COLUMN IF NOT EXISTS media_url TEXT NULL;
 
 -- Song Votes Table
 CREATE TABLE IF NOT EXISTS song_votes (
@@ -36,10 +38,14 @@ CREATE TABLE IF NOT EXISTS leadership (
     bio TEXT,
     email VARCHAR(100),
     phone VARCHAR(20),
+    member_id INT NULL,
     photo_url VARCHAR(255) DEFAULT 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300',
     display_order INT DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+ALTER TABLE leadership ADD COLUMN IF NOT EXISTS member_id INT NULL;
+ALTER TABLE leadership ADD COLUMN IF NOT EXISTS term_years VARCHAR(50) DEFAULT '2025-2026';
+ALTER TABLE leadership ADD COLUMN IF NOT EXISTS status ENUM('active','historical') DEFAULT 'active';
 
 -- Join Worship Team Applications Table
 CREATE TABLE IF NOT EXISTS worship_applications (

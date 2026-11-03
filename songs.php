@@ -2,49 +2,78 @@
 require_once "config/functions.php";
 
 $category = isset($_GET['category']) ? sanitize($_GET['category']) : null;
-$songs = getSongRequests(null, $category);
+$songs = getPublicSongRequests($category);
 
 // Handle anonymous or quick song request submission
-if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['action'] == 'submit_song') {
-    $requester = sanitize($_POST['requester_name']);
-    $title = sanitize($_POST['song_title']);
-    $artist = sanitize($_POST['artist']);
-    $cat = sanitize($_POST['genre_category']);
-    $key = sanitize($_POST['key_note']);
-    $link = sanitize($_POST['lyrics_link']);
-    $notes = sanitize($_POST['notes']);
+if ($_SERVER["REQUEST_METHOD"] === "POST" && ($_POST["action"] ?? "") === "submit_song") {
+    if (!verifyCsrfToken($_POST["csrf_token"] ?? null)) {
+        setFlash("danger", "Your session expired. Refresh the page and try again.");
+        redirect("songs.php");
+    }
+
+    $requester = isMemberLoggedIn() ? ($_SESSION["member_name"] ?? "") : trim($_POST["requester_name"] ?? "");
+    $title = trim($_POST["song_title"] ?? "");
+    $artist = trim($_POST["artist"] ?? "");
+    $cat = $_POST["genre_category"] ?? "Worship";
+    $key = trim($_POST["key_note"] ?? "");
+    $link = trim($_POST["lyrics_link"] ?? "");
+    $media_link = trim($_POST["media_url"] ?? "");
+    $notes = trim($_POST["notes"] ?? "");
     $member_id = isMemberLoggedIn() ? $_SESSION['member_id'] : null;
 
-    if (!empty($title) && !empty($requester)) {
-        if (addSongRequest($member_id, $requester, $title, $artist, $cat, $key, $link, $notes)) {
-            setFlash("success", "Song request submitted successfully! It will be reviewed by worship team leadership.");
-        } else {
-            setFlash("danger", "Failed to submit song request.");
+    $uploadPath = null;
+    try {
+        if ($title === "" || strlen($title) > 255 || $requester === "" || strlen($requester) > 100 ||
+            strlen($artist) > 100 || strlen($key) > 20 || strlen($notes) > 5000 ||
+            !in_array($cat, ["Worship", "Praise", "Hymn", "Special"], true) ||
+            ($link !== "" && !isSafeMediaUrl($link)) || ($media_link !== "" && !isSafeMediaUrl($media_link))) {
+            throw new RuntimeException("Check the required song title, category, and HTTP(S) links.");
         }
-    } else {
-        setFlash("warning", "Please provide song title and your name.");
+
+        if (!empty($_FILES["audio_file"]["name"])) {
+            if (!$member_id) {
+                throw new RuntimeException("Log in as a member to upload audio. You can still submit a public song link.");
+            }
+            if ($media_link !== "") {
+                throw new RuntimeException("Choose either an audio upload or an audio link, not both.");
+            }
+            $uploadPath = storeSongAudio($_FILES["audio_file"]);
+        }
+
+        if (addSongRequest($member_id, $requester, $title, $artist, $cat, $key, $link, $notes, $uploadPath ?: ($media_link ?: null))) {
+            setFlash("success", "Song submitted for leadership review. Approved songs will appear in the public player.");
+        } else {
+            if ($uploadPath) {
+                $storedFile = __DIR__ . DIRECTORY_SEPARATOR . str_replace("/", DIRECTORY_SEPARATOR, $uploadPath);
+                if (is_file($storedFile) && !unlink($storedFile)) {
+                    error_log("Unable to remove unused uploaded song file: " . $storedFile);
+                }
+            }
+            setFlash("danger", "The song could not be saved. Please try again.");
+        }
+    } catch (RuntimeException $e) {
+        setFlash("danger", $e->getMessage());
     }
     redirect("songs.php");
 }
 
-// Handle voting
-if (isset($_GET['vote_id'])) {
-    $song_id = (int)$_GET['vote_id'];
-    if (isMemberLoggedIn()) {
-        $member_id = $_SESSION['member_id'];
-        if (hasVotedForSong($song_id, $member_id)) {
-            setFlash("warning", "You have already upvoted this song!");
-        } else {
-            if (voteForSong($song_id, $member_id)) {
-                setFlash("success", "Upvote recorded!");
-            } else {
-                setFlash("danger", "Failed to register upvote.");
-            }
-        }
+if ($_SERVER["REQUEST_METHOD"] === "POST" && ($_POST["action"] ?? "") === "vote_song") {
+    if (!verifyCsrfToken($_POST["csrf_token"] ?? null)) {
+        setFlash("danger", "Your session expired. Refresh the page and try again.");
+    } elseif (!isMemberLoggedIn()) {
+        setFlash("info", "Please log in as a member to upvote song requests.");
     } else {
-        setFlash("info", "Please log in as a member to upvote song requests!");
+        $song_id = filter_var($_POST["song_id"] ?? null, FILTER_VALIDATE_INT);
+        $member_id = (int)$_SESSION["member_id"];
+        if (!$song_id || hasVotedForSong($song_id, $member_id)) {
+            setFlash("warning", "This song was already upvoted or is no longer available.");
+        } elseif (voteForSong($song_id, $member_id)) {
+            setFlash("success", "Upvote recorded!");
+        } else {
+            setFlash("danger", "The upvote could not be saved.");
+        }
     }
-    redirect("songs.php");
+    redirect("songs.php" . (!empty($_POST["category"]) ? "?category=" . urlencode($_POST["category"]) : ""));
 }
 ?>
 <!DOCTYPE html>
@@ -53,11 +82,14 @@ if (isset($_GET['vote_id'])) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Song Requests & Worship Catalog - Nehiloth Worship</title>
+    <link rel="manifest" href="/manifest.webmanifest">
+    <meta name="theme-color" content="#172b55">
+    <link rel="stylesheet" href="/css/style.css">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
         body { background: #f4f6f9; min-height: 100vh; }
-        .hero-banner { background: linear-gradient(135deg, #2b5876 0%, #4e4376 100%); color: white; padding: 40px 0; }
+        .hero-banner { background: linear-gradient(135deg, #172b55 0%, #283f73 72%, #b99c50 150%); color: white; padding: 40px 0; }
         .song-card { border-radius: 15px; border: none; transition: transform 0.2s, shadow 0.2s; }
         .song-card:hover { transform: translateY(-4px); box-shadow: 0 10px 20px rgba(0,0,0,0.1) !important; }
         .badge-status { font-size: 0.8rem; padding: 6px 12px; border-radius: 50px; }
@@ -68,8 +100,8 @@ if (isset($_GET['vote_id'])) {
 
 <div class="hero-banner text-center mb-4 shadow-sm">
     <div class="container">
-        <h1 class="fw-bold"><i class="fas fa-music text-warning me-2"></i>Worship Songs & Requests</h1>
-        <p class="lead mb-3">Request worship songs, upvote favorites, and see what the Nehiloth Worship Team is preparing!</p>
+        <h1 class="fw-bold"><i class="fas fa-music text-warning me-2"></i>Nehiloth Song Library</h1>
+        <p class="lead mb-3">Listen to approved worship songs, share a public link or member recording, and help prepare the next rehearsal.</p>
         <button class="btn btn-warning rounded-pill px-4 fw-bold shadow-sm" data-bs-toggle="modal" data-bs-target="#requestModal">
             <i class="fas fa-plus-circle me-1"></i> Submit New Song Request
         </button>
@@ -119,6 +151,22 @@ if (isset($_GET['vote_id'])) {
                                 <p class="text-muted mb-2"><i class="fas fa-user-tag me-1"></i>Artist: <strong><?php echo htmlspecialchars($s['artist']); ?></strong></p>
                                 <p class="small text-secondary mb-2"><i class="fas fa-key me-1"></i>Key: <span class="fw-bold text-dark"><?php echo htmlspecialchars($s['key_note']); ?></span></p>
 
+                                <?php if (!empty($s["media_url"])): ?>
+                                    <?php $mediaExtension = strtolower(pathinfo((string)parse_url($s["media_url"], PHP_URL_PATH), PATHINFO_EXTENSION)); ?>
+                                    <?php if (in_array($mediaExtension, ["mp3", "m4a", "wav", "ogg", "oga", "webm"], true)): ?>
+                                        <audio controls preload="none" class="w-100 mb-3">
+                                            <source src="<?php echo htmlspecialchars($s["media_url"]); ?>">
+                                            Your browser cannot play this audio format.
+                                        </audio>
+                                    <?php else: ?>
+                                        <a class="btn btn-sm btn-outline-primary mb-3" href="<?php echo htmlspecialchars($s["media_url"]); ?>" target="_blank" rel="noopener noreferrer"><i class="fas fa-external-link-alt me-1"></i>Play song link</a>
+                                    <?php endif; ?>
+                                <?php endif; ?>
+
+                                <?php if (!empty($s["lyrics_link"])): ?>
+                                    <a class="small d-block mb-2" href="<?php echo htmlspecialchars($s["lyrics_link"]); ?>" target="_blank" rel="noopener noreferrer">Lyrics / reference link</a>
+                                <?php endif; ?>
+
                                 <?php if (!empty($s['notes'])): ?>
                                     <p class="small bg-light p-2 rounded text-muted mb-2"><em>"<?php echo htmlspecialchars($s['notes']); ?>"</em></p>
                                 <?php endif; ?>
@@ -126,9 +174,21 @@ if (isset($_GET['vote_id'])) {
 
                             <div class="pt-3 border-top mt-3 d-flex justify-content-between align-items-center">
                                 <small class="text-muted"><i class="fas fa-user me-1"></i>Requested by <?php echo htmlspecialchars($s['requester_name']); ?></small>
-                                <a href="songs.php?vote_id=<?php echo $s['id']; ?>" class="btn btn-outline-primary btn-sm rounded-pill px-3 fw-bold">
-                                    <i class="fas fa-thumbs-up me-1"></i> <?php echo $s['votes_count']; ?>
-                                </a>
+                                <?php if (isMemberLoggedIn()): ?>
+                                    <form method="POST" class="m-0">
+                                        <input type="hidden" name="action" value="vote_song">
+                                        <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(csrfToken()); ?>">
+                                        <input type="hidden" name="song_id" value="<?php echo (int)$s["id"]; ?>">
+                                        <input type="hidden" name="category" value="<?php echo htmlspecialchars($category ?? ""); ?>">
+                                        <button type="submit" class="btn btn-outline-primary btn-sm rounded-pill px-3 fw-bold">
+                                            <i class="fas fa-thumbs-up me-1"></i> <?php echo (int)$s['votes_count']; ?>
+                                        </button>
+                                    </form>
+                                <?php else: ?>
+                                    <a href="login.php?redirect=songs.php" class="btn btn-outline-primary btn-sm rounded-pill px-3 fw-bold" aria-label="Log in to upvote">
+                                        <i class="fas fa-thumbs-up me-1"></i> <?php echo (int)$s['votes_count']; ?>
+                                    </a>
+                                <?php endif; ?>
                             </div>
                         </div>
                     </div>
@@ -146,13 +206,16 @@ if (isset($_GET['vote_id'])) {
                 <h5 class="modal-title fw-bold"><i class="fas fa-music text-warning me-2"></i>Submit Worship Song Request</h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
-            <form method="POST">
+            <form method="POST" enctype="multipart/form-data">
                 <div class="modal-body p-4">
                     <input type="hidden" name="action" value="submit_song">
+                    <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(csrfToken()); ?>">
+                    <?php if (!isMemberLoggedIn()): ?>
                     <div class="mb-3">
                         <label class="form-label fw-semibold">Your Name</label>
-                        <input type="text" name="requester_name" class="form-control" required placeholder="Enter your full name">
+                        <input type="text" name="requester_name" class="form-control" maxlength="100" required placeholder="Enter your full name">
                     </div>
+                    <?php endif; ?>
                     <div class="mb-3">
                         <label class="form-label fw-semibold">Song Title</label>
                         <input type="text" name="song_title" class="form-control" required placeholder="e.g. Way Maker">
@@ -178,10 +241,23 @@ if (isset($_GET['vote_id'])) {
                             <input type="text" name="key_note" class="form-control" placeholder="e.g. G Major">
                         </div>
                         <div class="col-md-6 mb-3">
-                            <label class="form-label fw-semibold">YouTube / Lyrics Link</label>
+                            <label class="form-label fw-semibold">Public song / YouTube link</label>
+                            <input type="url" name="media_url" class="form-control" placeholder="https://">
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label fw-semibold">Lyrics / reference link</label>
                             <input type="url" name="lyrics_link" class="form-control" placeholder="https://">
                         </div>
                     </div>
+                    <?php if (isMemberLoggedIn()): ?>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Or upload your recording</label>
+                        <input type="file" name="audio_file" class="form-control" accept=".mp3,.m4a,.wav,.ogg,.oga,.webm,audio/*">
+                        <div class="form-text">MP3, M4A, WAV, OGG, or WebM, up to 32 MB. Uploaded recordings are reviewed before appearing publicly.</div>
+                    </div>
+                    <?php else: ?>
+                    <p class="small text-muted">To upload a recording, <a href="login.php">sign in as an approved member</a>. Public song links may be submitted without signing in.</p>
+                    <?php endif; ?>
                     <div class="mb-3">
                         <label class="form-label fw-semibold">Additional Notes / Remarks</label>
                         <textarea name="notes" class="form-control" rows="2" placeholder="Why would you love to sing this song?"></textarea>

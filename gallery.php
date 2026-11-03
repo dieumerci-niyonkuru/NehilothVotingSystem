@@ -18,7 +18,7 @@ $gallery = $stmt->fetchAll();
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Worship Gallery - NELILOTH WORSHIP</title>
+    <title>Worship Gallery - Nehiloth Worship Team</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>body{background:#f4f6f9;min-height:100vh;padding-bottom:70px;}.hero-banner{background:linear-gradient(135deg,#e95440 0%,#2a5298 100%);color:white;padding:35px 0;}.gal-img{height:220px;object-fit:cover;width:100%;border-radius:15px 15px 0 0;}</style>
@@ -29,7 +29,7 @@ $gallery = $stmt->fetchAll();
 <div class="hero-banner text-center mb-4 shadow-sm">
     <div class="container">
         <h1 class="fw-bold"><i class="fas fa-images text-warning me-2"></i>Worship Gallery</h1>
-        <p class="lead mb-0">Photos and video highlights from NELILOTH Worship Services & Concerts</p>
+        <p class="lead mb-0">Photos and video highlights from Nehiloth Worship Team services and concerts</p>
     </div>
 </div>
 

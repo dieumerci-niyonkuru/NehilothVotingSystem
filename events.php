@@ -7,7 +7,7 @@ $events = $pdo->query("SELECT * FROM events ORDER BY event_date ASC, event_time 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Worship Events & Concerts - NELILOTH WORSHIP</title>
+    <title>Worship Events & Concerts - Nehiloth Worship Team</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>body{background:#f4f6f9;min-height:100vh;padding-bottom:70px;}.hero-banner{background:linear-gradient(135deg,#00b09b 0%,#96c93d 100%);color:white;padding:35px 0;}</style>
@@ -18,7 +18,7 @@ $events = $pdo->query("SELECT * FROM events ORDER BY event_date ASC, event_time 
 <div class="hero-banner text-center mb-4 shadow-sm">
     <div class="container">
         <h1 class="fw-bold"><i class="fas fa-calendar-check me-2"></i>Upcoming Events & Worship Concerts</h1>
-        <p class="lead mb-0">Join CEP Family at Rwanda Polytechnic, Tumba College for powerful ministry events</p>
+        <p class="lead mb-0">Join Nehiloth Worship Team at Rwanda Polytechnic, Tumba College for worship events</p>
     </div>
 </div>
 

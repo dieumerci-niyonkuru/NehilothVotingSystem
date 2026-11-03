@@ -7,7 +7,7 @@ $announcements = $pdo->query("SELECT * FROM announcements ORDER BY is_pinned DES
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>News & Announcements - NELILOTH WORSHIP</title>
+    <title>News & Announcements - Nehiloth Worship Team</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>body{background:#f4f6f9;min-height:100vh;padding-bottom:70px;}.hero-banner{background:linear-gradient(135deg,#1e3c72 0%,#2a5298 100%);color:white;padding:35px 0;}.news-card{border-radius:18px;border:none;transition:transform 0.2s;}.news-card:hover{transform:translateY(-3px);}</style>
@@ -18,7 +18,7 @@ $announcements = $pdo->query("SELECT * FROM announcements ORDER BY is_pinned DES
 <div class="hero-banner text-center mb-4 shadow-sm">
     <div class="container">
         <h1 class="fw-bold"><i class="fas fa-bullhorn text-warning me-2"></i>News & Announcements</h1>
-        <p class="lead mb-0">Official updates from NELILOTH WORSHIP & CEP Family Leadership</p>
+        <p class="lead mb-0">Official updates from the Nehiloth Worship Team leadership</p>
     </div>
 </div>
 

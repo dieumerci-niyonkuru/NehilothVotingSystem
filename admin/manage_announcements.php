@@ -1,9 +1,13 @@
 <?php
 require_once "../config/functions.php";
-if (!isAdminLoggedIn()) redirect("login.php");
+if (!canManageArea("announcements")) redirect(isMemberLoggedIn() ? "../member/dashboard.php" : "login.php");
 
 // Handle Publish Announcement
 if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['action'] == 'add_announcement') {
+    if (!verifyCsrfToken($_POST["csrf_token"] ?? null)) {
+        setFlash("danger", "Your session expired. Refresh the page and try again.");
+        redirect("manage_announcements.php");
+    }
     $title = sanitize($_POST['title']);
     $content = sanitize($_POST['content']);
     $author = sanitize($_POST['author_name']);
@@ -21,8 +25,12 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['a
 }
 
 // Delete Announcement
-if (isset($_GET['delete'])) {
-    $id = (int)$_GET['delete'];
+if ($_SERVER["REQUEST_METHOD"] === "POST" && ($_POST["action"] ?? "") === "delete_announcement") {
+    if (!verifyCsrfToken($_POST["csrf_token"] ?? null)) {
+        setFlash("danger", "Your session expired. Refresh the page and try again.");
+        redirect("manage_announcements.php");
+    }
+    $id = (int)($_POST["id"] ?? 0);
     $pdo->prepare("DELETE FROM announcements WHERE id = ?")->execute([$id]);
     setFlash("danger", "Announcement removed.");
     redirect("manage_announcements.php");
@@ -50,7 +58,7 @@ $announcements = $pdo->query("SELECT * FROM announcements ORDER BY is_pinned DES
             <p class="text-muted small">Publish announcements, pin news, and trigger member notifications</p>
         </div>
         <div>
-            <a href="dashboard.php" class="btn btn-outline-dark rounded-pill px-3"><i class="fas fa-arrow-left me-1"></i> Dashboard</a>
+            <a href="<?php echo isMemberLoggedIn() ? '../member/leadership_dashboard.php' : 'dashboard.php'; ?>" class="btn btn-outline-dark rounded-pill px-3"><i class="fas fa-arrow-left me-1"></i> Dashboard</a>
             <button class="btn btn-warning text-dark rounded-pill px-3 ms-2 fw-bold" data-bs-toggle="modal" data-bs-target="#addNewsModal">
                 <i class="fas fa-plus me-1"></i> New Announcement
             </button>
@@ -86,9 +94,14 @@ $announcements = $pdo->query("SELECT * FROM announcements ORDER BY is_pinned DES
                             </td>
                             <td><small class="text-muted"><?php echo date('M d, H:i', strtotime($a['created_at'])); ?></small></td>
                             <td>
-                                <a href="manage_announcements.php?delete=<?php echo $a['id']; ?>" class="btn btn-sm btn-outline-danger rounded-pill" onclick="return confirm('Delete announcement?');">
+                                <form method="POST" class="d-inline" onsubmit="return confirm('Delete announcement?');">
+                                    <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(csrfToken()); ?>">
+                                    <input type="hidden" name="action" value="delete_announcement">
+                                    <input type="hidden" name="id" value="<?php echo (int)$a['id']; ?>">
+                                    <button type="submit" class="btn btn-sm btn-outline-danger rounded-pill">
                                     <i class="fas fa-trash"></i>
-                                </a>
+                                    </button>
+                                </form>
                             </td>
                         </tr>
                     <?php endforeach; ?>
@@ -108,6 +121,7 @@ $announcements = $pdo->query("SELECT * FROM announcements ORDER BY is_pinned DES
             </div>
             <form method="POST">
                 <div class="modal-body">
+                    <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(csrfToken()); ?>">
                     <input type="hidden" name="action" value="add_announcement">
                     <div class="mb-3">
                         <label class="form-label fw-semibold">Title</label>
@@ -120,7 +134,7 @@ $announcements = $pdo->query("SELECT * FROM announcements ORDER BY is_pinned DES
                     <div class="row">
                         <div class="col-md-6 mb-3">
                             <label class="form-label fw-semibold">Author Name</label>
-                            <input type="text" name="author_name" class="form-control" value="NELILOTH Leadership">
+                            <input type="text" name="author_name" class="form-control" value="Nehiloth Leadership">
                         </div>
                         <div class="col-md-6 mb-3">
                             <label class="form-label fw-semibold">Image URL (Optional)</label>

@@ -7,6 +7,19 @@ ALTER TABLE members ADD COLUMN IF NOT EXISTS profile_pic VARCHAR(255) DEFAULT 'h
 ALTER TABLE members ADD COLUMN IF NOT EXISTS member_id_no VARCHAR(50) NULL;
 ALTER TABLE members ADD COLUMN IF NOT EXISTS group_dept VARCHAR(100) DEFAULT 'Worship Choir';
 ALTER TABLE members ADD COLUMN IF NOT EXISTS role ENUM('member','admin','president','secretary','schedule_coordinator','election_manager') DEFAULT 'member';
+ALTER TABLE admin ADD COLUMN IF NOT EXISTS member_id INT NULL;
+SET @admin_member_index_exists = (
+    SELECT COUNT(*) FROM information_schema.statistics
+    WHERE table_schema = DATABASE() AND table_name = 'admin' AND index_name = 'unique_member_admin'
+);
+SET @admin_member_index_sql = IF(
+    @admin_member_index_exists = 0,
+    'ALTER TABLE admin ADD UNIQUE KEY unique_member_admin (member_id)',
+    'SELECT 1'
+);
+PREPARE admin_member_index_stmt FROM @admin_member_index_sql;
+EXECUTE admin_member_index_stmt;
+DEALLOCATE PREPARE admin_member_index_stmt;
 
 -- Ensure positions table has election_id
 ALTER TABLE positions ADD COLUMN IF NOT EXISTS election_id INT NULL;
@@ -32,7 +45,7 @@ CREATE TABLE IF NOT EXISTS announcements (
     id INT PRIMARY KEY AUTO_INCREMENT,
     title VARCHAR(255) NOT NULL,
     content TEXT NOT NULL,
-    author_name VARCHAR(100) DEFAULT 'NELILOTH Leadership',
+    author_name VARCHAR(100) DEFAULT 'Nehiloth Leadership',
     image_url VARCHAR(255) NULL,
     is_pinned BOOLEAN DEFAULT FALSE,
     is_important BOOLEAN DEFAULT FALSE,
@@ -87,6 +100,43 @@ CREATE TABLE IF NOT EXISTS schedule_assignments (
     FOREIGN KEY (member_id) REFERENCES members(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS song_requests (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    member_id INT NULL,
+    requester_name VARCHAR(100) NOT NULL,
+    song_title VARCHAR(255) NOT NULL,
+    artist VARCHAR(100) DEFAULT 'Unknown / Traditional',
+    genre_category VARCHAR(100) DEFAULT 'Worship',
+    key_note VARCHAR(20) DEFAULT 'C',
+    lyrics_link TEXT NULL,
+    media_url TEXT NULL,
+    notes TEXT NULL,
+    status ENUM('pending','approved','scheduled','rejected') DEFAULT 'pending',
+    votes_count INT DEFAULT 0,
+    requested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (member_id) REFERENCES members(id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS song_votes (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    song_id INT NOT NULL,
+    member_id INT NOT NULL,
+    voted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY unique_song_member_vote (song_id, member_id),
+    FOREIGN KEY (song_id) REFERENCES song_requests(id) ON DELETE CASCADE,
+    FOREIGN KEY (member_id) REFERENCES members(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS rehearsal_songs (
+    schedule_id INT NOT NULL,
+    song_id INT NOT NULL,
+    sequence_no INT NOT NULL DEFAULT 1,
+    rehearsal_notes VARCHAR(500) NULL,
+    PRIMARY KEY (schedule_id, song_id),
+    FOREIGN KEY (schedule_id) REFERENCES weekly_schedules(id) ON DELETE CASCADE,
+    FOREIGN KEY (song_id) REFERENCES song_requests(id) ON DELETE CASCADE
+);
+
 -- Leadership Directory (Current & History)
 CREATE TABLE IF NOT EXISTS leadership (
     id INT PRIMARY KEY AUTO_INCREMENT,
@@ -94,12 +144,22 @@ CREATE TABLE IF NOT EXISTS leadership (
     role VARCHAR(100) NOT NULL,
     bio TEXT,
     phone VARCHAR(20),
+    member_id INT NULL,
     email VARCHAR(100),
     photo_url VARCHAR(255) DEFAULT 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300',
     term_years VARCHAR(50) DEFAULT '2025-2026',
     status ENUM('active','historical') DEFAULT 'active',
     display_order INT DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS leadership_activity (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    member_id INT NOT NULL,
+    action VARCHAR(255) NOT NULL,
+    ip_address VARCHAR(45) NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (member_id) REFERENCES members(id) ON DELETE CASCADE
 );
 
 -- Elections Engine
@@ -191,8 +251,8 @@ CREATE TABLE IF NOT EXISTS events (
 
 -- Seed Sample Announcements
 INSERT INTO announcements (title, content, author_name, is_pinned, is_important)
-SELECT * FROM (SELECT 'Welcome to NELILOTH WORSHIP Digital Platform' AS a, 'Welcome to the official digital platform of NELILOTH WORSHIP (CEP Family - Rwanda Polytechnic, Tumba College). Stay connected with weekly schedules, announcements, and leadership elections.' AS b, 'CEP Leadership' AS c, 1 AS d, 1 AS e) AS tmp
-WHERE NOT EXISTS (SELECT id FROM announcements WHERE title LIKE '%Welcome to NELILOTH%') LIMIT 1;
+SELECT * FROM (SELECT 'Welcome to Nehiloth Worship Team' AS a, 'Welcome to the official digital home of Nehiloth Worship Team at Rwanda Polytechnic, Tumba College. Stay connected with our songs, rehearsals, announcements, and leadership.' AS b, 'Nehiloth Leadership' AS c, 1 AS d, 1 AS e) AS tmp
+WHERE NOT EXISTS (SELECT id FROM announcements WHERE title LIKE '%Welcome to Nehiloth%' OR title LIKE '%Welcome to NELILOTH%') LIMIT 1;
 
 -- Seed Sample Schedule
 INSERT INTO weekly_schedules (activity_title, day_of_week, start_time, end_time, location, responsible_leader, description, date_scheduled)
@@ -205,12 +265,12 @@ WHERE NOT EXISTS (SELECT id FROM weekly_schedules WHERE activity_title = 'Midwee
 
 -- Seed Sample Active Election
 INSERT INTO elections (title, description, start_time, end_time, status)
-SELECT * FROM (SELECT 'NELILOTH Leadership Committee Election 2026' AS a, 'Official election for President, Vice President, Secretary, Treasurer, and Worship Leaders.' AS b, '2026-10-20 00:00:00' AS c, '2026-10-28 23:59:59' AS d, 'draft' AS e) AS tmp
+SELECT * FROM (SELECT 'Nehiloth Leadership Committee Election 2026' AS a, 'Official election for President, Vice President, Secretary, Treasurer, and Worship Team leaders.' AS b, '2026-10-20 00:00:00' AS c, '2026-10-28 23:59:59' AS d, 'draft' AS e) AS tmp
 WHERE NOT EXISTS (SELECT id FROM elections WHERE title LIKE '%Leadership Committee Election%') LIMIT 1;
 
 -- Seed Sample Positions
 INSERT INTO positions (election_id, title, description)
-SELECT e.id, 'President / Chairperson', 'Leads the NELILOTH Worship Organization spiritual & administrative affairs.'
+SELECT e.id, 'President / Chairperson', 'Leads the Nehiloth Worship Team spiritual and administrative affairs.'
 FROM elections e WHERE e.title LIKE '%Leadership Committee Election%' AND NOT EXISTS (SELECT id FROM positions WHERE title = 'President / Chairperson') LIMIT 1;
 
 INSERT INTO positions (election_id, title, description)
@@ -228,7 +288,7 @@ FROM positions p WHERE p.title = 'Worship Leader / Choir Director' AND NOT EXIST
 
 -- Seed Sample Gallery & Events
 INSERT INTO events (event_title, event_date, event_time, location, description, category)
-SELECT * FROM (SELECT 'Annual RP Tumba Praise Concert' AS a, '2026-11-15' AS b, '14:00:00' AS c, 'Tumba College Auditorium' AS d, 'A powerful evening of praise and worship featuring CEP Family choirs and guest ministers.' AS e, 'Concert' AS f) AS tmp
+SELECT * FROM (SELECT 'Annual RP Tumba Praise Concert' AS a, '2026-11-15' AS b, '14:00:00' AS c, 'Tumba College Auditorium' AS d, 'A powerful evening of praise and worship featuring the Nehiloth Worship Team and guest ministers.' AS e, 'Concert' AS f) AS tmp
 WHERE NOT EXISTS (SELECT id FROM events WHERE event_title = 'Annual RP Tumba Praise Concert') LIMIT 1;
 
 INSERT INTO gallery (title, category, media_url, description)

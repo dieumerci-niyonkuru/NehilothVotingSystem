@@ -7,6 +7,10 @@ A complete web platform for **Nehiloth Worship Team** managing:
 - 🗳️ **Democratic Leadership Elections**: Member voting for worship committee positions with verified, published results.
 - 🗳️ **Election Lifecycle & Ballots**: Draft, publish, schedule, pause, resume, close, and publish verified election results. Approved members are snapshotted at publication and submit one complete ballot per election.
 - 🛡️ **Admin Control Panel**: Centralized management for members, song request approvals, audition scheduling, and election controls.
+- 🎧 **Song Library & Rehearsal Setlists**: Members submit public song links or reviewed audio recordings; leaders schedule songs for rehearsals.
+- 📱 **Mobile-ready experience**: Responsive web pages, installable PWA shell, and JSON endpoints for mobile clients.
+- 👥 **Role-based leadership**: President, secretary, schedule coordinator, and election manager dashboards are separate from full administrator access.
+- 🔗 **Social Channels**: Direct links to Nehiloth Worship Team Instagram, YouTube, and TikTok.
 
 ---
 
@@ -61,6 +65,21 @@ The standard database setup above applies `upgrade.sql`, which creates or upgrad
 Open **Admin → Gallery** to manage public media. When the gallery manager is opened, supported files already in `photo/` and `video/` are added to the gallery automatically. Administrators can upload JPEG, PNG, GIF, WebP, MP4, WebM, and OGV files, edit titles and descriptions, and publish or hide items without deleting the original media file. Existing external HTTP(S) media links can also be added.
 
 The public gallery and gallery API show only published items and render videos with native playback controls. For an existing installation, run `upgrade.sql` to add the gallery visibility field before deploying these changes.
+
+## Songs, rehearsals, and mobile
+
+Members can submit a public song link or upload an MP3, M4A, WAV, OGG, or WebM recording (up to 32 MB). Song requests remain private until reviewed and approved. Approved recordings play in the song library and can be placed in an ordered rehearsal setlist from **Admin → Worship Schedule**. Members can remove their own pending requests.
+
+Assign leadership portal roles through **Admin → Member Management** or link a member in **Admin → Leadership**. Presidents, secretaries, schedule coordinators, and election managers receive role-scoped dashboards. Full administrator access is a separate explicit role grant and requires an approved member account.
+
+The website can be installed from a mobile browser as a PWA. Mobile clients can use:
+
+- `GET /api/songs.php` for approved and scheduled songs.
+- `POST /api/songs.php` with the signed-in member session, CSRF token from the API login response (`X-CSRF-Token`), and song metadata (or `audio_file` multipart upload) to submit a song.
+- `GET /api/schedules.php` for upcoming schedule entries with their ordered song setlists.
+- `GET /api/dashboard.php` for home data and official social links.
+
+This repository currently contains the PHP website and API, not a native Android application source tree. The mobile browser/PWA and API can be tested here; a native APK build requires the separate Android client project.
 
 ---
 

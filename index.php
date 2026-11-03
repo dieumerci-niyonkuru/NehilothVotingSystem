@@ -3,6 +3,7 @@ require_once "config/functions.php";
 $stats = getDashboardStats();
 $announcements = $pdo->query("SELECT * FROM announcements ORDER BY is_pinned DESC, created_at DESC LIMIT 3")->fetchAll();
 $schedules = $pdo->query("SELECT * FROM weekly_schedules WHERE date_scheduled >= CURDATE() ORDER BY date_scheduled ASC, start_time ASC LIMIT 3")->fetchAll();
+$featuredSongs = getPublicSongRequests(null, 4);
 $election = $pdo->query("SELECT * FROM elections WHERE status = 'open' LIMIT 1")->fetch();
 ?>
 <!DOCTYPE html>
@@ -10,12 +11,15 @@ $election = $pdo->query("SELECT * FROM elections WHERE status = 'open' LIMIT 1")
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NELILOTH WORSHIP - Digital Platform</title>
+    <title>Nehiloth Worship Team - Songs, Rehearsals & Community</title>
+    <link rel="manifest" href="/manifest.webmanifest">
+    <meta name="theme-color" content="#172b55">
+    <link rel="stylesheet" href="/css/style.css">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
         body { background: #f4f6f9; min-height: 100vh; padding-bottom: 70px; }
-        .hero-section { background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%); color: white; padding: 60px 0 50px 0; border-radius: 0 0 30px 30px; }
+        .hero-section { background: linear-gradient(135deg, #172b55 0%, #283f73 75%, #b99c50 150%); color: white; padding: 42px 0 50px 0; border-radius: 0 0 30px 30px; }
         .feature-card { border-radius: 20px; border: none; transition: transform 0.3s, box-shadow 0.3s; }
         .feature-card:hover { transform: translateY(-5px); box-shadow: 0 15px 30px rgba(0,0,0,0.1) !important; }
         .stat-box { background: rgba(255,255,255,0.15); backdrop-filter: blur(5px); border-radius: 15px; padding: 15px; }
@@ -29,10 +33,10 @@ $election = $pdo->query("SELECT * FROM elections WHERE status = 'open' LIMIT 1")
     <div class="container">
         <div class="row justify-content-center">
             <div class="col-lg-10">
-                <i class="fas fa-church fa-4x text-warning mb-3"></i>
-                <h1 class="display-4 fw-bold mb-2">NELILOTH WORSHIP</h1>
-                <p class="lead fw-normal text-warning mb-3">CEP Family &bull; Rwanda Polytechnic, Tumba College</p>
-                <p class="fs-5 fst-italic text-light mb-4">"Welcome to NELILOTH WORSHIP – One Family, One Purpose, One Voice in Worship."</p>
+                <img src="/logo/logo.jpg" alt="Nehiloth Worship Team logo" class="img-fluid rounded-circle bg-white p-2 mb-3 shadow" style="width:120px;height:120px;object-fit:contain">
+                <h1 class="display-4 fw-bold mb-2">NEHILOTH WORSHIP TEAM</h1>
+                <p class="lead fw-normal text-warning mb-3">Rwanda Polytechnic &bull; Tumba College</p>
+                <p class="fs-5 fst-italic text-light mb-4">One family, one purpose, one voice in worship.</p>
 
                 <!-- Live Metrics Bar -->
                 <div class="row g-3 justify-content-center mb-4">
@@ -75,6 +79,9 @@ $election = $pdo->query("SELECT * FROM elections WHERE status = 'open' LIMIT 1")
                     <a href="join_team.php" class="btn btn-outline-light btn-lg rounded-pill px-4 fw-bold">
                         <i class="fas fa-user-plus me-2"></i> Join Worship Team
                     </a>
+                    <a href="songs.php" class="btn btn-outline-warning btn-lg rounded-pill px-4 fw-bold">
+                        <i class="fas fa-headphones me-2"></i> Listen to Songs
+                    </a>
                 </div>
             </div>
         </div>
@@ -107,7 +114,7 @@ $election = $pdo->query("SELECT * FROM elections WHERE status = 'open' LIMIT 1")
             <a href="announcements.php" class="card feature-card shadow-sm h-100 p-4 text-center bg-white text-decoration-none">
                 <i class="fas fa-bullhorn fa-3x text-warning mb-3"></i>
                 <h5 class="fw-bold text-dark mb-1">News & Updates</h5>
-                <p class="text-muted small mb-0">CEP Family official news</p>
+                <p class="text-muted small mb-0">News from the Nehiloth Worship Team</p>
             </a>
         </div>
         <div class="col-6 col-md-4 col-lg-3">
@@ -141,8 +148,8 @@ $election = $pdo->query("SELECT * FROM elections WHERE status = 'open' LIMIT 1")
         <div class="col-6 col-md-4 col-lg-3">
             <a href="about.php" class="card feature-card shadow-sm h-100 p-4 text-center bg-white text-decoration-none">
                 <i class="fas fa-university fa-3x text-dark mb-3"></i>
-                <h5 class="fw-bold text-dark mb-1">RP Tumba CEP</h5>
-                <p class="text-muted small mb-0">Vision, history & mission</p>
+                <h5 class="fw-bold text-dark mb-1">About Nehiloth</h5>
+                <p class="text-muted small mb-0">Our worship community, purpose & mission</p>
             </a>
         </div>
     </div>
@@ -154,7 +161,7 @@ $election = $pdo->query("SELECT * FROM elections WHERE status = 'open' LIMIT 1")
                 <div>
                     <span class="badge bg-warning text-dark fw-bold mb-2">ELECTION IS NOW OPEN</span>
                     <h3 class="fw-bold mb-1"><?php echo htmlspecialchars($election['title']); ?></h3>
-                    <p class="mb-0 text-white-50">Participate in electing the next NELILOTH WORSHIP leadership committee.</p>
+                    <p class="mb-0 text-white-50">Participate in electing the next Nehiloth Worship Team leadership committee.</p>
                 </div>
                 <a href="voting.php" class="btn btn-warning text-dark btn-lg rounded-pill px-4 fw-bold mt-3 mt-md-0">
                     <i class="fas fa-vote-yea me-1"></i> Cast Vote Now &rarr;
@@ -211,6 +218,33 @@ $election = $pdo->query("SELECT * FROM elections WHERE status = 'open' LIMIT 1")
                 <?php endif; ?>
             </div>
         </div>
+
+        <section class="bg-white rounded-4 p-4 shadow-sm mt-4">
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+                <div><h2 class="h4 fw-bold mb-1"><i class="fas fa-headphones text-warning me-2"></i>Song Library & Rehearsal Picks</h2><p class="text-muted small mb-0">Play approved recordings and discover songs being prepared by the team.</p></div>
+                <a href="songs.php" class="btn btn-outline-primary">Open song library</a>
+            </div>
+            <div class="row g-3">
+                <?php foreach ($featuredSongs as $song): ?>
+                    <div class="col-md-6 col-lg-3">
+                        <article class="border rounded-3 p-3 h-100">
+                            <span class="badge bg-warning text-dark"><?php echo htmlspecialchars($song["genre_category"]); ?></span>
+                            <h3 class="h6 fw-bold mt-2 mb-1"><?php echo htmlspecialchars($song["song_title"]); ?></h3>
+                            <p class="small text-muted"><?php echo htmlspecialchars($song["artist"]); ?></p>
+                            <?php if (!empty($song["media_url"])): ?>
+                                <?php $audioExtension = strtolower(pathinfo((string)parse_url($song["media_url"], PHP_URL_PATH), PATHINFO_EXTENSION)); ?>
+                                <?php if (in_array($audioExtension, ["mp3", "m4a", "wav", "ogg", "oga", "webm"], true)): ?>
+                                    <audio controls preload="none" class="w-100"><source src="<?php echo htmlspecialchars($song["media_url"]); ?>"></audio>
+                                <?php else: ?>
+                                    <a href="<?php echo htmlspecialchars($song["media_url"]); ?>" target="_blank" rel="noopener noreferrer" class="small">Play song link</a>
+                                <?php endif; ?>
+                            <?php else: ?><span class="small text-muted">Recording not added yet</span><?php endif; ?>
+                        </article>
+                    </div>
+                <?php endforeach; ?>
+                <?php if (!$featuredSongs): ?><p class="text-muted mb-0">Approved songs will appear here after team review.</p><?php endif; ?>
+            </div>
+        </section>
     </div>
 </div>
 

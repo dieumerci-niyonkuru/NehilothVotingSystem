@@ -39,7 +39,7 @@ $assigned_duties = $stmt2->fetchAll();
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Member Profile - NELILOTH WORSHIP</title>
+    <title>Member Profile - Nehiloth Worship Team</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>body{background:#f4f6f9;min-height:100vh;padding-bottom:70px;}.profile-img{width:110px;height:110px;object-fit:cover;border-radius:50%;border:4px solid #fff;box-shadow:0 5px 15px rgba(0,0,0,0.1);}</style>

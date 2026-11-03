@@ -5,7 +5,7 @@ header("Access-Control-Allow-Methods: GET, OPTIONS");
 
 require_once __DIR__ . "/../config/functions.php";
 
-$member_id = isset($_GET['member_id']) ? (int)$_GET['member_id'] : (isMemberLoggedIn() ? $_SESSION['member_id'] : 0);
+$member_id = isMemberLoggedIn() ? (int)$_SESSION['member_id'] : 0;
 
 // Announcements
 $announcements = $pdo->query("SELECT * FROM announcements ORDER BY is_pinned DESC, created_at DESC LIMIT 5")->fetchAll();
@@ -18,6 +18,7 @@ $election = $pdo->query("SELECT * FROM elections WHERE status = 'open' LIMIT 1")
 
 // Leadership
 $leadership = $pdo->query("SELECT name, role, photo_url FROM leadership WHERE status = 'active' ORDER BY display_order ASC LIMIT 4")->fetchAll();
+$songs = getPublicSongRequests(null, 10);
 
 // Unread Notifications
 $unread_count = 0;
@@ -34,8 +35,14 @@ echo json_encode([
         "upcoming_schedules" => $schedules,
         "active_election" => $election ? $election : null,
         "leadership_team" => $leadership,
+        "featured_songs" => $songs,
         "unread_notifications" => $unread_count,
-        "organization" => "NELILOTH WORSHIP - CEP Family RP Tumba College"
+        "organization" => "Nehiloth Worship Team - Rwanda Polytechnic, Tumba College",
+        "social_links" => [
+            "instagram" => "https://www.instagram.com/nehilothworshipteam/",
+            "youtube" => "https://www.youtube.com/@NEHILOTH_WORSHIPTEAM",
+            "tiktok" => "https://www.tiktok.com/@nehilothworshipteam"
+        ]
     ]
 ]);
 ?>

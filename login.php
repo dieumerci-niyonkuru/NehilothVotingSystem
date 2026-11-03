@@ -27,9 +27,26 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['a
                     $_SESSION["member_name"] = $member["name"];
                     $_SESSION["member_phone"] = $member["phone"];
                     $_SESSION["member_email"] = $member["email"];
+                    $_SESSION["member_role"] = $member["role"] ?? "member";
+
+                    if ($_SESSION["member_role"] === "admin") {
+                        $adminAccount = $pdo->prepare("SELECT id FROM admin WHERE member_id = ? LIMIT 1");
+                        $adminAccount->execute([(int)$member["id"]]);
+                        $adminId = $adminAccount->fetchColumn();
+                        if (!$adminId) {
+                            session_unset();
+                            session_destroy();
+                            setFlash("danger", "Administrator access is not linked to this member account. Contact an existing administrator.");
+                            redirect("login.php");
+                        }
+                        $_SESSION["admin_id"] = (int)$adminId;
+                    }
 
                     setFlash("success", "Welcome back, " . $member["name"] . "!");
-                    redirect($redirect_target);
+                    if (isAdminLoggedIn()) {
+                        redirect("admin/dashboard.php");
+                    }
+                    redirect(isLeadershipLoggedIn() ? "member/leadership_dashboard.php" : $redirect_target);
                 }
             } else {
                 setFlash("danger", "Incorrect phone number/email or password.");
@@ -48,7 +65,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['a
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Member Login - NELILOTH WORSHIP</title>
+    <title>Member Login - Nehiloth Worship Team</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
@@ -75,7 +92,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['a
                 <div class="text-center mb-4">
                     <i class="fas fa-church fa-3x text-primary mb-2"></i>
                     <h3 class="fw-bold text-dark mb-1">Member Login</h3>
-                    <p class="text-muted small">NELILOTH WORSHIP &bull; CEP Family RP Tumba</p>
+                    <p class="text-muted small">Nehiloth Worship Team &bull; Rwanda Polytechnic, Tumba</p>
                 </div>
 
                 <form method="POST">
@@ -121,7 +138,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['a
             <!-- Prominent Admin Login Button Section -->
             <div class="card admin-card p-4 text-center shadow-sm">
                 <h5 class="fw-bold text-white mb-2"><i class="fas fa-user-shield text-warning me-2"></i>Administrator Access</h5>
-                <p class="small text-light opacity-75 mb-3">Are you an authorized NELILOTH committee administrator?</p>
+                <p class="small text-light opacity-75 mb-3">Are you an authorized Nehiloth Worship Team administrator?</p>
                 <a href="/admin/login.php" class="btn btn-warning btn-lg rounded-pill fw-bold w-100 text-dark shadow-sm">
                     <i class="fas fa-shield-alt me-2"></i> Admin Login Panel
                 </a>

@@ -1,6 +1,6 @@
 <?php
 require_once "../config/functions.php";
-if (!isAdminLoggedIn()) redirect("login.php");
+if (!canManageArea("elections")) redirect(isMemberLoggedIn() ? "../member/dashboard.php" : "login.php");
 
 if ($_SERVER["REQUEST_METHOD"] === "POST") {
     if (!verifyCsrfToken($_POST["csrf_token"] ?? null)) {
@@ -15,7 +15,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         $result = $election_id ? transitionElection($election_id, $transition) : ["success" => false, "message" => "Invalid election."];
         setFlash($result["success"] ? "success" : "danger", $result["message"]);
         if ($result["success"]) {
-            logAction($_SESSION["admin_id"], "Election #$election_id transition: $transition");
+            logAction($_SESSION["admin_id"] ?? 0, "Election #$election_id transition: $transition");
         }
         redirect("manage_elections.php");
     }
@@ -35,7 +35,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         } else {
             $stmt = $pdo->prepare("INSERT INTO elections (title, description, start_time, end_time, status) VALUES (?, ?, ?, ?, 'draft')");
             $stmt->execute([$title, $description, $start->format("Y-m-d H:i:s"), $end->format("Y-m-d H:i:s")]);
-            logAction($_SESSION["admin_id"], "Created election #" . $pdo->lastInsertId());
+            logAction($_SESSION["admin_id"] ?? 0, "Created election #" . $pdo->lastInsertId());
             setFlash("success", "Election saved as a draft. Add positions and candidates, then publish it.");
         }
         redirect("manage_elections.php");
@@ -51,7 +51,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         if ($election_id && $title !== "" && strlen($title) <= 100 && $election_status === "draft") {
             $pdo->prepare("INSERT INTO positions (election_id, title, description) VALUES (?, ?, ?)")
                 ->execute([(int)$election_id, $title, $description]);
-            logAction($_SESSION["admin_id"], "Added position #" . $pdo->lastInsertId() . " to election #$election_id");
+            logAction($_SESSION["admin_id"] ?? 0, "Added position #" . $pdo->lastInsertId() . " to election #$election_id");
             setFlash("success", "Position added to election.");
         } else {
             setFlash("danger", "Enter a position title of 100 characters or fewer and select a draft election.");
@@ -75,7 +75,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                 trim($_POST["bio"] ?? ""),
                 trim($_POST["photo_url"] ?? "")
             ]);
-            logAction($_SESSION["admin_id"], "Added candidate #" . $pdo->lastInsertId() . " to position #$position_id");
+            logAction($_SESSION["admin_id"] ?? 0, "Added candidate #" . $pdo->lastInsertId() . " to position #$position_id");
             setFlash("success", "Candidate registered for the position.");
         } else {
             setFlash("danger", "Enter a candidate name of 100 characters or fewer and select a position in a draft election.");
@@ -110,7 +110,7 @@ $all_positions = $pdo->query("SELECT p.*, e.title as election_title FROM positio
             <p class="text-muted small">Create elections, configure candidate manifestos, and review aggregate participation</p>
         </div>
         <div>
-            <a href="dashboard.php" class="btn btn-outline-dark rounded-pill px-3"><i class="fas fa-arrow-left me-1"></i> Dashboard</a>
+            <a href="<?php echo isMemberLoggedIn() ? '../member/leadership_dashboard.php' : 'dashboard.php'; ?>" class="btn btn-outline-dark rounded-pill px-3"><i class="fas fa-arrow-left me-1"></i> Dashboard</a>
             <button class="btn btn-primary rounded-pill px-3 ms-2 fw-bold" data-bs-toggle="modal" data-bs-target="#newElectionModal">
                 <i class="fas fa-plus me-1"></i> Create Election
             </button>
@@ -200,7 +200,7 @@ $all_positions = $pdo->query("SELECT p.*, e.title as election_title FROM positio
                     <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(csrfToken()); ?>">
                     <div class="mb-3">
                         <label class="form-label fw-semibold">Election Title</label>
-                        <input type="text" name="title" class="form-control" maxlength="255" required placeholder="NELILOTH Leadership Election 2026">
+                        <input type="text" name="title" class="form-control" maxlength="255" required placeholder="Nehiloth Leadership Election 2026">
                     </div>
                     <div class="mb-3">
                         <label class="form-label fw-semibold">Description</label>

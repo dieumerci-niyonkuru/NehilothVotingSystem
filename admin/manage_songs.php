@@ -1,23 +1,47 @@
 <?php
 require_once "../config/functions.php";
-if (!isAdminLoggedIn()) redirect("login.php");
+if (!canManageArea("songs")) redirect(isMemberLoggedIn() ? "../member/dashboard.php" : "login.php");
 
-// Handle status updates
-if (isset($_GET['action']) && isset($_GET['id'])) {
-    $song_id = (int)$_GET['id'];
-    $act = $_GET['action'];
-    if ($act == 'approve') {
+if ($_SERVER["REQUEST_METHOD"] === "POST") {
+    if (!verifyCsrfToken($_POST["csrf_token"] ?? null)) {
+        setFlash("danger", "Your session expired. Refresh the page and try again.");
+        redirect("manage_songs.php");
+    }
+    $song_id = filter_var($_POST["id"] ?? null, FILTER_VALIDATE_INT);
+    $act = $_POST["action"] ?? "";
+    if (!$song_id) {
+        setFlash("danger", "Invalid song request.");
+    } elseif ($act === "edit_song") {
+        $title = trim($_POST["song_title"] ?? "");
+        $artist = trim($_POST["artist"] ?? "");
+        $category = $_POST["genre_category"] ?? "";
+        $key = trim($_POST["key_note"] ?? "");
+        $mediaUrl = trim($_POST["media_url"] ?? "");
+        $lyricsLink = trim($_POST["lyrics_link"] ?? "");
+        $notes = trim($_POST["notes"] ?? "");
+        if ($title === "" || strlen($title) > 255 || strlen($artist) > 100 || strlen($key) > 20 ||
+            strlen($notes) > 5000 || !in_array($category, ["Worship", "Praise", "Hymn", "Special"], true) ||
+            ($mediaUrl !== "" && !isSafeSongMediaUrl($mediaUrl)) || ($lyricsLink !== "" && !isSafeMediaUrl($lyricsLink))) {
+            setFlash("danger", "Check the song details and valid HTTP(S) links.");
+        } else {
+            $update = $pdo->prepare("UPDATE song_requests SET song_title = ?, artist = ?, genre_category = ?, key_note = ?, media_url = ?, lyrics_link = ?, notes = ? WHERE id = ?");
+            $update->execute([$title, $artist, $category, $key, $mediaUrl ?: null, $lyricsLink ?: null, $notes, $song_id]);
+            setFlash("success", "Song details updated.");
+        }
+    } elseif ($act === 'approve') {
         updateSongStatus($song_id, 'approved');
         setFlash("success", "Song approved!");
-    } elseif ($act == 'schedule') {
+    } elseif ($act === 'schedule') {
         updateSongStatus($song_id, 'scheduled');
         setFlash("info", "Song scheduled for service!");
-    } elseif ($act == 'reject') {
+    } elseif ($act === 'reject') {
         updateSongStatus($song_id, 'rejected');
         setFlash("warning", "Song request rejected.");
-    } elseif ($act == 'delete') {
+    } elseif ($act === 'delete') {
         deleteSongRequest($song_id);
         setFlash("danger", "Song request deleted.");
+    } else {
+        setFlash("danger", "Unknown song action.");
     }
     redirect("manage_songs.php");
 }
@@ -44,7 +68,7 @@ $songs = getSongRequests($status_filter);
             <h2 class="fw-bold text-dark mb-0"><i class="fas fa-music text-warning me-2"></i>Manage Song Requests</h2>
             <p class="text-muted small">Review, approve, schedule, or manage member song requests</p>
         </div>
-        <a href="dashboard.php" class="btn btn-outline-dark rounded-pill px-3"><i class="fas fa-arrow-left me-1"></i> Dashboard</a>
+        <a href="<?php echo isMemberLoggedIn() ? '../member/leadership_dashboard.php' : 'dashboard.php'; ?>" class="btn btn-outline-dark rounded-pill px-3"><i class="fas fa-arrow-left me-1"></i> Dashboard</a>
     </div>
 
     <?php $f = getFlash(); if ($f): ?>
@@ -69,6 +93,7 @@ $songs = getSongRequests($status_filter);
                         <th>Artist</th>
                         <th>Category / Key</th>
                         <th>Requester</th>
+                        <th>Recording / link</th>
                         <th>Upvotes</th>
                         <th>Status</th>
                         <th>Actions</th>
@@ -76,7 +101,7 @@ $songs = getSongRequests($status_filter);
                 </thead>
                 <tbody>
                     <?php if (empty($songs)): ?>
-                        <tr><td colspan="7" class="text-center py-4 text-muted">No song requests found.</td></tr>
+                        <tr>                        <td colspan="8" class="text-center py-4 text-muted">No song requests found.</td></tr>
                     <?php else: ?>
                         <?php foreach ($songs as $s): ?>
                             <tr>
@@ -90,7 +115,17 @@ $songs = getSongRequests($status_filter);
                                     <span class="badge bg-light text-dark ms-1">Key: <?php echo htmlspecialchars($s['key_note']); ?></span>
                                 </td>
                                 <td><?php echo htmlspecialchars($s['requester_name']); ?></td>
-                                <td><span class="fw-bold text-primary"><i class="fas fa-thumbs-up me-1"></i><?php echo $s['votes_count']; ?></span></td>
+                                <td>
+                                    <?php if (!empty($s["media_url"])): ?>
+                                        <?php $audioExtension = strtolower(pathinfo((string)parse_url($s["media_url"], PHP_URL_PATH), PATHINFO_EXTENSION)); ?>
+                                        <?php if (in_array($audioExtension, ["mp3", "m4a", "wav", "ogg", "oga", "webm"], true)): ?>
+                                            <audio controls preload="none" style="max-width:180px"><source src="<?php echo htmlspecialchars($s["media_url"]); ?>"></audio>
+                                        <?php else: ?>
+                                            <a href="<?php echo htmlspecialchars($s["media_url"]); ?>" target="_blank" rel="noopener noreferrer">Open link</a>
+                                        <?php endif; ?>
+                                    <?php else: ?><span class="text-muted">None</span><?php endif; ?>
+                                </td>
+                                <td><span class="fw-bold text-primary"><i class="fas fa-thumbs-up me-1"></i><?php echo (int)$s['votes_count']; ?></span></td>
                                 <td>
                                     <?php
                                         $st = $s['status'];
@@ -100,11 +135,35 @@ $songs = getSongRequests($status_filter);
                                 </td>
                                 <td>
                                     <div class="btn-group btn-group-sm">
-                                        <a href="manage_songs.php?action=approve&id=<?php echo $s['id']; ?>" class="btn btn-success" title="Approve"><i class="fas fa-check"></i></a>
-                                        <a href="manage_songs.php?action=schedule&id=<?php echo $s['id']; ?>" class="btn btn-info text-dark" title="Schedule for Service"><i class="fas fa-calendar-check"></i></a>
-                                        <a href="manage_songs.php?action=reject&id=<?php echo $s['id']; ?>" class="btn btn-warning" title="Reject"><i class="fas fa-times"></i></a>
-                                        <a href="manage_songs.php?action=delete&id=<?php echo $s['id']; ?>" class="btn btn-danger" onclick="return confirm('Delete this song request?');" title="Delete"><i class="fas fa-trash"></i></a>
+                                        <button type="button" class="btn btn-outline-primary" data-bs-toggle="collapse" data-bs-target="#edit-song-<?php echo (int)$s["id"]; ?>" aria-expanded="false" aria-label="Edit song details"><i class="fas fa-pen"></i></button>
+                                        <?php foreach (["approve" => "success", "schedule" => "info", "reject" => "warning", "delete" => "danger"] as $action => $color): ?>
+                                            <form method="POST" class="d-inline" <?php echo $action === "delete" ? "onsubmit=\"return confirm('Delete this song request?');\"" : ""; ?>>
+                                                <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(csrfToken()); ?>">
+                                                <input type="hidden" name="id" value="<?php echo (int)$s["id"]; ?>">
+                                                <input type="hidden" name="action" value="<?php echo htmlspecialchars($action); ?>">
+                                                <button type="submit" class="btn btn-<?php echo $color; ?> <?php echo $action === "schedule" ? "text-dark" : ""; ?>" title="<?php echo htmlspecialchars(ucfirst($action)); ?>">
+                                                    <i class="fas <?php echo $action === "approve" ? "fa-check" : ($action === "schedule" ? "fa-calendar-check" : ($action === "reject" ? "fa-times" : "fa-trash")); ?>"></i>
+                                                </button>
+                                            </form>
+                                        <?php endforeach; ?>
                                     </div>
+                                </td>
+                            </tr>
+                            <tr class="collapse" id="edit-song-<?php echo (int)$s["id"]; ?>">
+                                <td colspan="8">
+                                    <form method="POST" class="row g-2 bg-light p-3 rounded-3">
+                                        <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(csrfToken()); ?>">
+                                        <input type="hidden" name="action" value="edit_song">
+                                        <input type="hidden" name="id" value="<?php echo (int)$s["id"]; ?>">
+                                        <div class="col-md-3"><label class="form-label">Title</label><input name="song_title" class="form-control" maxlength="255" value="<?php echo htmlspecialchars($s["song_title"]); ?>" required></div>
+                                        <div class="col-md-2"><label class="form-label">Artist</label><input name="artist" class="form-control" maxlength="100" value="<?php echo htmlspecialchars($s["artist"]); ?>"></div>
+                                        <div class="col-md-2"><label class="form-label">Category</label><select name="genre_category" class="form-select"><?php foreach (["Worship", "Praise", "Hymn", "Special"] as $category): ?><option value="<?php echo $category; ?>" <?php echo $s["genre_category"] === $category ? "selected" : ""; ?>><?php echo $category; ?></option><?php endforeach; ?></select></div>
+                                        <div class="col-md-1"><label class="form-label">Key</label><input name="key_note" class="form-control" maxlength="20" value="<?php echo htmlspecialchars($s["key_note"]); ?>"></div>
+                                        <div class="col-md-4"><label class="form-label">Public audio/song URL</label><input type="url" name="media_url" class="form-control" value="<?php echo htmlspecialchars($s["media_url"] ?? ""); ?>"></div>
+                                        <div class="col-md-6"><label class="form-label">Lyrics/reference URL</label><input type="url" name="lyrics_link" class="form-control" value="<?php echo htmlspecialchars($s["lyrics_link"] ?? ""); ?>"></div>
+                                        <div class="col-md-6"><label class="form-label">Notes</label><input name="notes" class="form-control" maxlength="5000" value="<?php echo htmlspecialchars($s["notes"] ?? ""); ?>"></div>
+                                        <div class="col-12"><button class="btn btn-primary btn-sm">Save song details</button></div>
+                                    </form>
                                 </td>
                             </tr>
                         <?php endforeach; ?>

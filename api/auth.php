@@ -43,10 +43,24 @@ switch ($action) {
             $_SESSION['member_id'] = $user['id'];
             $_SESSION['member_name'] = $user['name'];
             $_SESSION['member_role'] = $user['role'];
+            if ($user['role'] === 'admin') {
+                $adminAccount = $pdo->prepare("SELECT id FROM admin WHERE member_id = ? LIMIT 1");
+                $adminAccount->execute([(int)$user['id']]);
+                $adminId = $adminAccount->fetchColumn();
+                if (!$adminId) {
+                    unset($_SESSION['member_id'], $_SESSION['member_name'], $_SESSION['member_role']);
+                    http_response_code(403);
+                    echo json_encode(["status" => "error", "message" => "Administrator access is not linked to this account."]);
+                    exit();
+                }
+                $_SESSION['admin_id'] = (int)$adminId;
+            }
 
             echo json_encode([
                 "status" => "success",
-                "message" => "Welcome back to NELILOTH WORSHIP!",
+                "message" => "Welcome back to Nehiloth Worship Team!",
+                "csrf_token" => csrfToken(),
+                "leadership_dashboard" => isLeadershipLoggedIn() && !isAdminLoggedIn() ? "/member/leadership_dashboard.php" : null,
                 "user" => [
                     "id" => (int)$user['id'],
                     "name" => $user['name'],

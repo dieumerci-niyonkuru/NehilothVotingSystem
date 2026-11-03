@@ -3,6 +3,21 @@ require_once __DIR__ . "/database.php";
 
 function isAdminLoggedIn() { return isset($_SESSION["admin_id"]); }
 function isMemberLoggedIn() { return isset($_SESSION["member_id"]); }
+function getMemberRole() { return $_SESSION["member_role"] ?? "member"; }
+function isLeadershipLoggedIn() { return isMemberLoggedIn() && in_array(getMemberRole(), ["admin", "president", "secretary", "schedule_coordinator", "election_manager"], true); }
+function canManageArea($area) {
+    if (isAdminLoggedIn()) {
+        return true;
+    }
+    $roleAreas = [
+        "songs" => ["president", "secretary"],
+        "schedule" => ["president", "secretary", "schedule_coordinator"],
+        "announcements" => ["president", "secretary"],
+        "leadership" => ["president"],
+        "elections" => ["election_manager"]
+    ];
+    return isLeadershipLoggedIn() && in_array(getMemberRole(), $roleAreas[$area] ?? [], true);
+}
 function redirect($url) { header("Location: $url"); exit(); }
 function sanitize($input) { return htmlspecialchars(trim($input), ENT_QUOTES, "UTF-8"); }
 function generateAccessCode() { return strtoupper(substr(str_shuffle("ABCDEFGHJKLMNPQRSTUVWXYZ23456789"), 0, 8)); }
@@ -242,7 +257,18 @@ function submitElectionBallot($member_id, $election_id, $selections, $idempotenc
 }
 function setFlash($type, $msg) { $_SESSION["flash"] = ["type" => $type, "message" => $msg]; }
 function getFlash() { if (isset($_SESSION["flash"])) { $f = $_SESSION["flash"]; unset($_SESSION["flash"]); return $f; } return null; }
-function logAction($admin_id, $action) { global $pdo; $stmt = $pdo->prepare("INSERT INTO admin_logs (admin_id, action, ip_address) VALUES (?, ?, ?)"); $stmt->execute([$admin_id, $action, $_SERVER["REMOTE_ADDR"]]); }
+function logAction($admin_id, $action) {
+    global $pdo;
+    if ((int)$admin_id > 0) {
+        $stmt = $pdo->prepare("INSERT INTO admin_logs (admin_id, action, ip_address) VALUES (?, ?, ?)");
+        $stmt->execute([(int)$admin_id, $action, $_SERVER["REMOTE_ADDR"] ?? null]);
+        return;
+    }
+    if (isMemberLoggedIn()) {
+        $stmt = $pdo->prepare("INSERT INTO leadership_activity (member_id, action, ip_address) VALUES (?, ?, ?)");
+        $stmt->execute([(int)$_SESSION["member_id"], $action, $_SERVER["REMOTE_ADDR"] ?? null]);
+    }
+}
 
 // ========== NOTIFICATIONS ==========
 function addNotification($message, $type = "info") {
@@ -327,6 +353,78 @@ function getSongRequests($status = null, $category = null, $limit = 50) {
     } catch (PDOException $e) { return []; }
 }
 
+function getPublicSongRequests($category = null, $limit = 100) {
+    global $pdo;
+    $sql = "SELECT id, requester_name, song_title, artist, genre_category, key_note, lyrics_link, media_url, notes, status, votes_count, requested_at FROM song_requests WHERE status IN ('approved','scheduled')";
+    $params = [];
+    if ($category) {
+        $sql .= " AND genre_category = ?";
+        $params[] = $category;
+    }
+    $sql .= " ORDER BY status = 'scheduled' DESC, votes_count DESC, requested_at DESC LIMIT " . max(1, min(200, (int)$limit));
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($params);
+    return $stmt->fetchAll();
+}
+
+function storeSongAudio($upload) {
+    $errors = [
+        UPLOAD_ERR_INI_SIZE => "The audio file exceeds the server upload limit.",
+        UPLOAD_ERR_FORM_SIZE => "The audio file exceeds the allowed size.",
+        UPLOAD_ERR_PARTIAL => "The audio upload was incomplete.",
+        UPLOAD_ERR_NO_FILE => "Choose an audio file or provide a public link."
+    ];
+    if (!is_array($upload) || ($upload["error"] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+        $errorCode = is_array($upload) ? ($upload["error"] ?? UPLOAD_ERR_NO_FILE) : UPLOAD_ERR_NO_FILE;
+        throw new RuntimeException($errors[$errorCode] ?? "The audio upload failed.");
+    }
+    if (!is_uploaded_file($upload["tmp_name"]) || $upload["size"] > 32 * 1024 * 1024) {
+        throw new RuntimeException("Audio uploads must be valid files no larger than 32 MB.");
+    }
+
+    $types = [
+        "mp3" => ["audio/mpeg", "audio/mp3"],
+        "m4a" => ["audio/mp4", "audio/x-m4a", "video/mp4"],
+        "wav" => ["audio/wav", "audio/x-wav", "audio/vnd.wave"],
+        "ogg" => ["audio/ogg", "application/ogg"],
+        "oga" => ["audio/ogg", "application/ogg"],
+        "webm" => ["audio/webm", "video/webm"]
+    ];
+    $extension = strtolower(pathinfo($upload["name"], PATHINFO_EXTENSION));
+    $mime = (new finfo(FILEINFO_MIME_TYPE))->file($upload["tmp_name"]);
+    if (!isset($types[$extension]) || !in_array($mime, $types[$extension], true)) {
+        throw new RuntimeException("Use an MP3, M4A, WAV, OGG, or WebM audio file.");
+    }
+
+    $directory = dirname(__DIR__) . DIRECTORY_SEPARATOR . "audio";
+    if (!is_dir($directory) && !mkdir($directory, 0755, true) && !is_dir($directory)) {
+        throw new RuntimeException("The audio folder could not be created. Check server permissions.");
+    }
+    $fileName = bin2hex(random_bytes(16)) . "." . $extension;
+    if (!move_uploaded_file($upload["tmp_name"], $directory . DIRECTORY_SEPARATOR . $fileName)) {
+        throw new RuntimeException("The audio file could not be saved. Check server folder permissions.");
+    }
+    return "audio/" . $fileName;
+}
+
+function isSafeMediaUrl($url) {
+    if (!is_string($url) || strlen($url) > 2048 || !filter_var($url, FILTER_VALIDATE_URL)) {
+        return false;
+    }
+    return in_array(strtolower((string)parse_url($url, PHP_URL_SCHEME)), ["http", "https"], true)
+        && (bool)parse_url($url, PHP_URL_HOST);
+}
+
+function isSafeSongMediaUrl($url) {
+    if (!is_string($url)) {
+        return false;
+    }
+    if (preg_match('/\Aaudio\/[a-f0-9]{32}\.(mp3|m4a|wav|ogg|oga|webm)\z/i', $url)) {
+        return true;
+    }
+    return isSafeMediaUrl($url);
+}
+
 function getMemberSongRequests($member_id) {
     global $pdo;
     try {
@@ -336,14 +434,15 @@ function getMemberSongRequests($member_id) {
     } catch (PDOException $e) { return []; }
 }
 
-function addSongRequest($member_id, $requester_name, $title, $artist, $category, $key_note, $lyrics_link, $notes) {
+function addSongRequest($member_id, $requester_name, $title, $artist, $category, $key_note, $lyrics_link, $notes, $media_url = null) {
     global $pdo;
     try {
-        $stmt = $pdo->prepare("INSERT INTO song_requests (member_id, requester_name, song_title, artist, genre_category, key_note, lyrics_link, notes, status, votes_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', 1)");
-        $stmt->execute([$member_id, $requester_name, $title, $artist, $category, $key_note, $lyrics_link, $notes]);
+        $stmt = $pdo->prepare("INSERT INTO song_requests (member_id, requester_name, song_title, artist, genre_category, key_note, lyrics_link, notes, media_url, status, votes_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0)");
+        $stmt->execute([$member_id, $requester_name, $title, $artist, $category, $key_note, $lyrics_link, $notes, $media_url]);
         $song_id = $pdo->lastInsertId();
         if ($member_id) {
             $pdo->prepare("INSERT INTO song_votes (song_id, member_id) VALUES (?, ?)")->execute([$song_id, $member_id]);
+            $pdo->prepare("UPDATE song_requests SET votes_count = 1 WHERE id = ?")->execute([$song_id]);
         }
         addNotification("New song request submitted: '$title' by $requester_name", "info");
         return true;
@@ -353,11 +452,25 @@ function addSongRequest($member_id, $requester_name, $title, $artist, $category,
 function voteForSong($song_id, $member_id) {
     global $pdo;
     try {
+        $pdo->beginTransaction();
+        $song = $pdo->prepare("SELECT id FROM song_requests WHERE id = ? AND status IN ('approved','scheduled') FOR UPDATE");
+        $song->execute([(int)$song_id]);
+        if (!$song->fetch()) {
+            $pdo->rollBack();
+            return false;
+        }
         $stmt = $pdo->prepare("INSERT INTO song_votes (song_id, member_id) VALUES (?, ?)");
-        $stmt->execute([$song_id, $member_id]);
+        $stmt->execute([(int)$song_id, (int)$member_id]);
         $pdo->prepare("UPDATE song_requests SET votes_count = votes_count + 1 WHERE id = ?")->execute([$song_id]);
+        $pdo->commit();
         return true;
-    } catch (PDOException $e) { return false; }
+    } catch (PDOException $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        error_log("Unable to record song vote: " . $e->getMessage());
+        return false;
+    }
 }
 
 function hasVotedForSong($song_id, $member_id) {
@@ -381,10 +494,53 @@ function updateSongStatus($song_id, $status) {
 function deleteSongRequest($song_id) {
     global $pdo;
     try {
+        $stmt = $pdo->prepare("SELECT media_url FROM song_requests WHERE id = ?");
+        $stmt->execute([(int)$song_id]);
+        $mediaUrl = $stmt->fetchColumn();
         $stmt = $pdo->prepare("DELETE FROM song_requests WHERE id = ?");
-        $stmt->execute([$song_id]);
+        $stmt->execute([(int)$song_id]);
+        if ($stmt->rowCount() > 0) {
+            deleteStoredSongAudio($mediaUrl);
+        }
         return true;
-    } catch (PDOException $e) { return false; }
+    } catch (PDOException $e) {
+        error_log("Unable to delete song request: " . $e->getMessage());
+        return false;
+    }
+}
+
+function deleteStoredSongAudio($mediaUrl) {
+    if (!is_string($mediaUrl) || !preg_match('/\Aaudio\/[a-f0-9]{32}\.(mp3|m4a|wav|ogg|oga|webm)\z/i', $mediaUrl)) {
+        return;
+    }
+    $filePath = dirname(__DIR__) . DIRECTORY_SEPARATOR . str_replace("/", DIRECTORY_SEPARATOR, $mediaUrl);
+    if (is_file($filePath) && !unlink($filePath)) {
+        error_log("Unable to remove deleted song audio file: " . $filePath);
+    }
+}
+
+function deleteOwnPendingSongRequest($song_id, $member_id) {
+    global $pdo;
+    try {
+        $pdo->beginTransaction();
+        $stmt = $pdo->prepare("SELECT media_url FROM song_requests WHERE id = ? AND member_id = ? AND status = 'pending' FOR UPDATE");
+        $stmt->execute([(int)$song_id, (int)$member_id]);
+        $mediaUrl = $stmt->fetchColumn();
+        if ($mediaUrl === false) {
+            $pdo->rollBack();
+            return false;
+        }
+        $pdo->prepare("DELETE FROM song_requests WHERE id = ? AND member_id = ? AND status = 'pending'")->execute([(int)$song_id, (int)$member_id]);
+        $pdo->commit();
+        deleteStoredSongAudio($mediaUrl);
+        return true;
+    } catch (PDOException $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        error_log("Unable to delete member song request: " . $e->getMessage());
+        return false;
+    }
 }
 
 // ========== LEADERSHIP DIRECTORY FUNCTIONS ==========

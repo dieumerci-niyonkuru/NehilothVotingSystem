@@ -20,7 +20,7 @@ $recentApplications = getWorshipApplications('pending');
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin Dashboard - NELILOTH WORSHIP</title>
+    <title>Admin Dashboard - Nehiloth Worship Team</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
@@ -36,8 +36,8 @@ $recentApplications = getWorshipApplications('pending');
     <!-- Header -->
     <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 bg-white p-3 p-md-4 rounded-4 shadow-sm">
         <div>
-            <h2 class="fw-bold text-dark mb-0"><i class="fas fa-user-shield text-warning me-2"></i>NELILOTH Administrator Control Panel</h2>
-            <p class="text-muted small mb-0">CEP Family - Rwanda Polytechnic, Tumba College Digital Platform Administration</p>
+            <h2 class="fw-bold text-dark mb-0"><i class="fas fa-user-shield text-warning me-2"></i>Nehiloth Administrator Control Panel</h2>
+            <p class="text-muted small mb-0">Nehiloth Worship Team administration at Rwanda Polytechnic, Tumba College</p>
         </div>
         <div class="d-flex gap-2 mt-2 mt-md-0">
             <a href="reports.php" class="btn btn-success rounded-pill px-3"><i class="fas fa-file-download me-1"></i> Export Reports</a>

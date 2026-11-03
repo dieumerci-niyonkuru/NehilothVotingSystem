@@ -13,6 +13,9 @@ $current_page = basename($_SERVER['PHP_SELF']);
         <a href="/schedule.php" class="text-decoration-none <?php echo $current_page == 'schedule.php' ? 'text-warning fw-bold' : 'text-light'; ?> small">
             <i class="fas fa-calendar-alt fa-lg d-block mb-1"></i>Schedule
         </a>
+        <a href="/songs.php" class="text-decoration-none <?php echo $current_page == 'songs.php' ? 'text-warning fw-bold' : 'text-light'; ?> small">
+            <i class="fas fa-music fa-lg d-block mb-1"></i>Songs
+        </a>
         <a href="/leadership.php" class="text-decoration-none <?php echo $current_page == 'leadership.php' ? 'text-warning fw-bold' : 'text-light'; ?> small">
             <i class="fas fa-users-cog fa-lg d-block mb-1"></i>Leadership
         </a>

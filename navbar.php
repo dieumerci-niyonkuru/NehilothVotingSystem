@@ -5,8 +5,9 @@ $current_page = basename($_SERVER['PHP_SELF']);
 ?>
 <nav class="navbar navbar-expand-lg navbar-dark bg-dark sticky-top shadow-sm">
     <div class="container">
-        <a class="navbar-brand fw-bold text-warning" href="/index.php">
-            <i class="fas fa-church text-light me-2"></i>NELILOTH WORSHIP
+        <a class="navbar-brand fw-bold text-warning d-flex align-items-center" href="/index.php">
+            <img src="/logo/logo.jpg" alt="Nehiloth Worship Team" width="42" height="42" class="rounded-circle bg-white me-2 object-fit-cover">
+            <span>Nehiloth Worship</span>
         </a>
         <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mainNavbar">
             <span class="navbar-toggler-icon"></span>
@@ -36,12 +37,26 @@ $current_page = basename($_SERVER['PHP_SELF']);
                     <a class="nav-link fw-semibold <?php echo $current_page=='gallery.php'?'active text-warning':''; ?>" href="/gallery.php"><i class="fas fa-images me-1"></i> Gallery</a>
                 </li>
                 <li class="nav-item">
-                    <a class="nav-link fw-semibold <?php echo $current_page=='about.php'?'active text-warning':''; ?>" href="/about.php"><i class="fas fa-info-circle me-1"></i> About CEP</a>
+                    <a class="nav-link fw-semibold <?php echo $current_page=='about.php'?'active text-warning':''; ?>" href="/about.php"><i class="fas fa-info-circle me-1"></i> About Nehiloth</a>
                 </li>
             </ul>
 
             <div class="d-flex align-items-center gap-2">
-                <?php if (isMemberLoggedIn()): ?>
+                <?php if (isMemberLoggedIn() && isAdminLoggedIn()): ?>
+                    <a href="/admin/dashboard.php" class="btn btn-warning btn-sm rounded-pill px-3 fw-bold">
+                        <i class="fas fa-user-shield me-1"></i> Admin Dashboard
+                    </a>
+                    <a href="/logout.php" class="btn btn-danger btn-sm rounded-pill px-3">
+                        <i class="fas fa-sign-out-alt me-1"></i> Logout
+                    </a>
+                <?php elseif (isMemberLoggedIn() && isLeadershipLoggedIn()): ?>
+                    <a href="/member/leadership_dashboard.php" class="btn btn-outline-warning btn-sm rounded-pill px-3">
+                        <i class="fas fa-users-cog me-1"></i> Leadership
+                    </a>
+                    <a href="/logout.php" class="btn btn-danger btn-sm rounded-pill px-3">
+                        <i class="fas fa-sign-out-alt me-1"></i> Logout
+                    </a>
+                <?php elseif (isMemberLoggedIn()): ?>
                     <a href="/profile.php" class="btn btn-outline-info btn-sm rounded-pill px-3">
                         <i class="fas fa-user-circle me-1"></i> Profile
                     </a>

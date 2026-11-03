@@ -20,16 +20,24 @@ $sql .= " GROUP BY s.id ORDER BY s.date_scheduled ASC, s.start_time ASC";
 $stmt = $pdo->prepare($sql);
 $stmt->execute($params);
 $schedules = $stmt->fetchAll();
+$setlistStmt = $pdo->query("SELECT rs.schedule_id, rs.sequence_no, sr.song_title, sr.artist, sr.media_url FROM rehearsal_songs rs JOIN song_requests sr ON sr.id = rs.song_id WHERE sr.status IN ('approved','scheduled') ORDER BY rs.schedule_id, rs.sequence_no");
+$setlists = [];
+foreach ($setlistStmt->fetchAll() as $setlistSong) {
+    $setlists[(int)$setlistSong["schedule_id"]][] = $setlistSong;
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Weekly Worship Schedule - NELILOTH WORSHIP</title>
+    <title>Weekly Worship Schedule - Nehiloth Worship Team</title>
+    <link rel="manifest" href="/manifest.webmanifest">
+    <meta name="theme-color" content="#172b55">
+    <link rel="stylesheet" href="/css/style.css">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-    <style>body{background:#f4f6f9;min-height:100vh;padding-bottom:70px;}.hero-banner{background:linear-gradient(135deg,#11998e 0%,#38ef7d 100%);color:white;padding:35px 0;}.sched-card{border-radius:18px;border:none;transition:transform 0.2s;}.sched-card:hover{transform:translateY(-3px);}</style>
+    <style>body{background:#f5f6f8;min-height:100vh;padding-bottom:70px;}.hero-banner{background:linear-gradient(135deg,#172b55 0%,#304b7a 70%,#b99c50 150%);color:white;padding:35px 0;}.sched-card{border-radius:18px;border:none;transition:transform 0.2s;}.sched-card:hover{transform:translateY(-3px);}</style>
 </head>
 <body>
 <?php include "navbar.php"; ?>
@@ -71,6 +79,28 @@ $schedules = $stmt->fetchAll();
 
                         <?php if (!empty($s['description'])): ?>
                             <p class="small bg-light p-3 rounded-3 text-muted mb-3"><?php echo htmlspecialchars($s['description']); ?></p>
+                        <?php endif; ?>
+
+                        <?php if (!empty($setlists[(int)$s["id"]])): ?>
+                            <div class="bg-light rounded-3 p-3 mb-3">
+                                <h6 class="fw-bold mb-2"><i class="fas fa-music text-primary me-2"></i>Rehearsal song list</h6>
+                                <ol class="mb-0 ps-3">
+                                    <?php foreach ($setlists[(int)$s["id"]] as $rehearsalSong): ?>
+                                        <li class="mb-2">
+                                            <strong><?php echo htmlspecialchars($rehearsalSong["song_title"]); ?></strong>
+                                            <span class="text-muted">— <?php echo htmlspecialchars($rehearsalSong["artist"]); ?></span>
+                                            <?php if (!empty($rehearsalSong["media_url"])): ?>
+                                                <?php $audioExtension = strtolower(pathinfo((string)parse_url($rehearsalSong["media_url"], PHP_URL_PATH), PATHINFO_EXTENSION)); ?>
+                                                <?php if (in_array($audioExtension, ["mp3", "m4a", "wav", "ogg", "oga", "webm"], true)): ?>
+                                                    <audio controls preload="none" class="d-block w-100 mt-2"><source src="<?php echo htmlspecialchars($rehearsalSong["media_url"]); ?>"></audio>
+                                                <?php else: ?>
+                                                    <a href="<?php echo htmlspecialchars($rehearsalSong["media_url"]); ?>" target="_blank" rel="noopener noreferrer" class="small d-block">Play song link</a>
+                                                <?php endif; ?>
+                                            <?php endif; ?>
+                                        </li>
+                                    <?php endforeach; ?>
+                                </ol>
+                            </div>
                         <?php endif; ?>
 
                         <div class="row pt-2 border-top">
