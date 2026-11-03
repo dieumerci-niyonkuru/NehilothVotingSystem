@@ -20,8 +20,8 @@ if ($election_id > 0) {
 // Handle Vote Submission
 if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['action'] == 'submit_ballot') {
     if (!isMemberLoggedIn()) {
-        setFlash("danger", "You must log in to participate in committee elections.");
-        redirect("login.php");
+        setFlash("warning", "Please log in with your phone number and password to cast your vote.");
+        redirect("login.php?redirect=voting.php");
     }
 
     $member_id = $_SESSION['member_id'];
@@ -97,6 +97,26 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['a
         </div>
     <?php endif; ?>
 
+    <!-- Login Required Prompt Banner if not authenticated -->
+    <?php if (!isMemberLoggedIn() && !isAdminLoggedIn()): ?>
+        <div class="bg-dark text-white rounded-4 p-4 shadow-sm mb-4 border border-warning">
+            <div class="d-flex flex-wrap justify-content-between align-items-center">
+                <div>
+                    <h5 class="fw-bold text-warning mb-1"><i class="fas fa-lock me-2"></i>Member Authentication Required to Vote</h5>
+                    <p class="small text-light mb-0">Every member must log in with their phone number and password before casting a secret ballot.</p>
+                </div>
+                <div class="d-flex gap-2 mt-3 mt-md-0">
+                    <a href="login.php?redirect=voting.php" class="btn btn-primary rounded-pill px-4 fw-bold">
+                        <i class="fas fa-sign-in-alt me-1"></i> Member Login
+                    </a>
+                    <a href="admin/login.php" class="btn btn-warning text-dark rounded-pill px-4 fw-bold">
+                        <i class="fas fa-user-shield me-1"></i> Admin Login
+                    </a>
+                </div>
+            </div>
+        </div>
+    <?php endif; ?>
+
     <!-- Results Link Bar -->
     <div class="d-flex justify-content-between align-items-center bg-white p-3 rounded-4 shadow-sm mb-4">
         <div>
@@ -161,6 +181,10 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['a
                                     <div class="pt-3 border-top mt-3">
                                         <?php if ($voted): ?>
                                             <button class="btn btn-secondary w-100 rounded-pill disabled" disabled><i class="fas fa-check me-1"></i> Voted</button>
+                                        <?php elseif (!isMemberLoggedIn()): ?>
+                                            <a href="login.php?redirect=voting.php" class="btn btn-outline-primary w-100 rounded-pill fw-bold">
+                                                <i class="fas fa-sign-in-alt me-1"></i> Log In to Vote
+                                            </a>
                                         <?php elseif ($status == 'OPEN'): ?>
                                             <form method="POST">
                                                 <input type="hidden" name="action" value="submit_ballot">

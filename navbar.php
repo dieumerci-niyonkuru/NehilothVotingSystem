@@ -59,6 +59,9 @@ $current_page = basename($_SERVER['PHP_SELF']);
                     <a href="/login.php" class="btn btn-primary btn-sm rounded-pill px-3 fw-bold">
                         <i class="fas fa-sign-in-alt me-1"></i> Member Login
                     </a>
+                    <a href="/admin/login.php" class="btn btn-outline-warning btn-sm rounded-pill px-3 fw-bold">
+                        <i class="fas fa-user-shield me-1"></i> Admin Login
+                    </a>
                 <?php endif; ?>
             </div>
         </div>
